@@ -74,12 +74,12 @@ export function buildWGSL(graph){
         outType = 'f32';
         break;
       }
-      case 'ConstFloat': {
-        const v = (typeof n.value === 'number') ? n.value : 0.0;
-        line = `let node_${id} = ${v.toFixed(6)};`;
-        outType = 'f32';
-        break;
-      }
+case 'ConstFloat': {
+  const v = (typeof n.value === 'number') ? n.value : (n.props?.value ?? 0.0);
+  line = `let node_${id} = ${v.toFixed(6)};`;
+  outType = 'f32';
+  break;
+}
       case 'Expr': {
         const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
         const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
@@ -90,13 +90,14 @@ export function buildWGSL(graph){
         outType = 'f32';
         break;
       }
-      case 'CircleField': {
-        const R = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.25';
-        const E = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.02';
-        line = `let node_${id} = 1.0 - smoothstep((${R}) - max(${E}, 0.0001), (${R}) + max(${E}, 0.0001), distance(in.uv, vec2<f32>(0.5, 0.5)));`;
-        outType = 'f32';
-        break;
-      }
+case 'CircleField': {
+  // Use connected inputs if available, otherwise use node parameters, finally fallback to defaults
+  const R = n.inputs?.[0] ? want(n.inputs[0],'f32') : (n.props?.radius ?? 0.25);
+  const E = n.inputs?.[1] ? want(n.inputs[1],'f32') : (n.props?.epsilon ?? 0.02);
+  line = `let node_${id} = 1.0 - smoothstep((${R}) - max(${E}, 0.0001), (${R}) + max(${E}, 0.0001), distance(in.uv, vec2<f32>(0.5, 0.5)));`;
+  outType = 'f32';
+  break;
+}
       case 'Multiply': {
         const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
         const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(0.0)';

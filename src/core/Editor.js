@@ -1,14 +1,64 @@
 export const NodeDefs = {
-  OutputFinal: { label: 'Output',   cat: 'Output',  inputs: 1, pinsIn: ['color'], pinsOut: [] },
-  ConstFloat:  { label: 'Float',    cat: 'Input',   inputs: 0, pinsIn: [],        pinsOut: [{ label: 'v', type: 'f32' }], params: ['value'] },
-  ConstVec2:   { label: 'Vec2',     cat: 'Input',   inputs: 0, pinsIn: [],        pinsOut: [{ label: 'v', type: 'vec2' }], params: ['x','y'] },
-  UV:          { label: 'UV',       cat: 'Input',   inputs: 0, pinsIn: [],        pinsOut: [{ label: 'uv', type: 'vec2' }] },
-  Time:        { label: 'Time',     cat: 'Input',   inputs: 0, pinsIn: [],        pinsOut: [{ label: 't', type: 'f32' }] },
-  CircleField: { label: 'Circle',   cat: 'Field',   inputs: 2, pinsIn: ['R','E'], pinsOut: [{ label: 'f', type: 'f32' }] },
-  Multiply:    { label: 'Multiply', cat: 'Math',    inputs: 2, pinsIn: ['A','B'], pinsOut: [{ label: 'v', type: 'vec3' }] },
-  Add:         { label: 'Add',      cat: 'Math',    inputs: 2, pinsIn: ['A','B'], pinsOut: [{ label: 'v', type: 'vec3' }] },
-  Expr:        { label: 'Expr',     cat: 'Utility', inputs: 2, pinsIn: ['a','b'], pinsOut: [{ label: 'f', type: 'f32' }], params: ['expr'] },
-  Saturate:    { label: 'Saturate', cat: 'Math',    inputs: 1, pinsIn: ['In'],    pinsOut: [{ label: 'v', type: 'vec3' }] }
+  OutputFinal: { 
+    label: 'Output', cat: 'Output', inputs: 1, 
+    pinsIn: ['color'], pinsOut: [],
+    params: [] 
+  },
+  ConstFloat: { 
+    label: 'Float', cat: 'Input', inputs: 0, 
+    pinsIn: [], pinsOut: [{ label: 'v', type: 'f32' }], 
+    params: [
+      { name: 'value', type: 'float', default: 0.0, label: 'Value' }
+    ]
+  },
+  ConstVec2: { 
+    label: 'Vec2', cat: 'Input', inputs: 0, 
+    pinsIn: [], pinsOut: [{ label: 'v', type: 'vec2' }], 
+    params: [
+      { name: 'x', type: 'float', default: 0.0, label: 'X' },
+      { name: 'y', type: 'float', default: 0.0, label: 'Y' }
+    ]
+  },
+  UV: { 
+    label: 'UV', cat: 'Input', inputs: 0, 
+    pinsIn: [], pinsOut: [{ label: 'uv', type: 'vec2' }],
+    params: []
+  },
+  Time: { 
+    label: 'Time', cat: 'Input', inputs: 0, 
+    pinsIn: [], pinsOut: [{ label: 't', type: 'f32' }],
+    params: []
+  },
+  CircleField: { 
+    label: 'Circle', cat: 'Field', inputs: 2, 
+    pinsIn: ['R','E'], pinsOut: [{ label: 'f', type: 'f32' }],
+    params: [
+      { name: 'radius', type: 'float', default: 0.25, label: 'Radius' },
+      { name: 'epsilon', type: 'float', default: 0.01, label: 'Epsilon' }
+    ]
+  },
+  Multiply: { 
+    label: 'Multiply', cat: 'Math', inputs: 2, 
+    pinsIn: ['A','B'], pinsOut: [{ label: 'v', type: 'vec3' }],
+    params: []
+  },
+  Add: { 
+    label: 'Add', cat: 'Math', inputs: 2, 
+    pinsIn: ['A','B'], pinsOut: [{ label: 'v', type: 'vec3' }],
+    params: []
+  },
+  Expr: { 
+    label: 'Expr', cat: 'Utility', inputs: 2, 
+    pinsIn: ['a','b'], pinsOut: [{ label: 'f', type: 'f32' }], 
+    params: [
+      { name: 'expr', type: 'expression', default: 'a', label: 'Expression' }
+    ]
+  },
+  Saturate: { 
+    label: 'Saturate', cat: 'Math', inputs: 1, 
+    pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'vec3' }],
+    params: []
+  }
 };
 
 let _nextId = 1;
@@ -21,14 +71,26 @@ export function makeNode(kind, x = 0, y = 0) {
     x, y, w: 180, h: Math.max(60, 40 + (def.inputs||0)*18),
     inputs: new Array(def.inputs).fill(null),
     params: {},
-    expr: def.params?.includes('expr') ? 'a' : undefined,
-    value: def.params?.includes('value') ? 0.0 : undefined
+    expr: def.params?.find(p => p.name === 'expr') ? 'a' : undefined,
+    value: def.params?.find(p => p.name === 'value')?.default ?? undefined
   };
-  // defaults for CircleField
-  if (node.kind === 'CircleField') {
-    node.props = node.props || {};
-    if (typeof node.props.radius !== 'number')  node.props.radius = 0.25;
-    if (typeof node.props.epsilon !== 'number') node.props.epsilon = 0.01;
+  
+  // Initialize all parameter defaults
+  if (def.params) {
+    for (const param of def.params) {
+      if (param.name === 'value') {
+        node.value = param.default;
+      } else if (param.name === 'x') {
+        node.x = param.default;
+      } else if (param.name === 'y') {
+        node.y = param.default;
+      } else if (param.name === 'expr') {
+        node.expr = param.default;
+      } else {
+        if (!node.props) node.props = {};
+        node.props[param.name] = param.default;
+      }
+    }
   }
 
   return node;
@@ -75,7 +137,8 @@ export class Editor {
     this.offsetX = 0;
     this.offsetY = 0;
     this._isPanning = false;
-
+    this.paramPanel = null;        // parameter panel DOM
+    this.paramPanelNode = null;
     // Interaction state
     this.dragging = null;         // { id, ox, oy }
     this.dragWire = null;         // { from:{nodeId,pin}, pos:{x,y} }
@@ -250,16 +313,25 @@ export class Editor {
         return;
       }
 
-      // Clicked node?
-      const clicked = this._hitNode(pos.x, pos.y);
-      if(!clicked){
-        // start box select
-        this.graph.selection.clear();
-        this.boxSelect = { x0: pos.x, y0: pos.y, x1: pos.x, y1: pos.y };
-        this.draw();
-        return;
-      }
+// Clicked node?
+const clicked = this._hitNode(pos.x, pos.y);
+if(!clicked){
+  // start box select
+  this.graph.selection.clear();
+  this.boxSelect = { x0: pos.x, y0: pos.y, x1: pos.x, y1: pos.y };
+  this.draw();
+  return;
+}
 
+// Debug: Log all clicks
+console.log('Node clicked:', clicked.kind, 'detail:', e.detail);
+
+// Double-click detection for parameter panel
+if(e.detail === 2){ // double-click
+  console.log('Double-click detected, opening panel for:', clicked.kind);
+  this._showParameterPanel(clicked, e.clientX, e.clientY);
+  return;
+}
       // Drag node(s)
       let dragIds = new Set(this.graph.selection.has(clicked.id) ? this.graph.selection : [clicked.id]);
       // If clicked a non-selected node, select only it
@@ -517,6 +589,177 @@ export class Editor {
   _hideMenu(){
     if(this.menuEl){ this.menuEl.remove(); this.menuEl = null; }
   }
+
+
+// ===== Parameter Panel =====
+_hideParameterPanel(){
+  if(this.paramPanel){ 
+    this.paramPanel.remove(); 
+    this.paramPanel = null; 
+    this.paramPanelNode = null;
+  }
+}
+
+_showParameterPanel(node, clientX, clientY){
+  console.log('_showParameterPanel called for:', node.kind, 'at', clientX, clientY);
+  
+  this._hideParameterPanel();
+  const def = NodeDefs[node.kind];
+  console.log('NodeDef found:', def);
+  
+  if(!def?.params || def.params.length === 0) {
+    console.log('No parameters for this node type');
+    return;
+  }
+  
+  console.log('Creating panel with', def.params.length, 'parameters');
+  this._hideParameterPanel();
+  
+
+  if(!def?.params || def.params.length === 0) return;
+  
+  const panel = document.createElement('div');
+  panel.className = 'param-panel';
+  panel.style.position = 'fixed';
+  panel.style.left = (clientX + 20) + 'px';
+  panel.style.top = clientY + 'px';
+  panel.style.zIndex = '1000';
+  
+  // Header
+  const header = document.createElement('div');
+  header.className = 'param-header';
+  header.textContent = `${def.label} Parameters`;
+  panel.appendChild(header);
+  
+  // Parameters
+  for(const param of def.params){
+    const paramDiv = this._createParameterInput(param, node);
+    panel.appendChild(paramDiv);
+  
+  }
+  document.body.appendChild(panel);
+  this.paramPanel = panel;
+  this.paramPanelNode = node;
+
+  // Apply/Cancel buttons
+// Replace the Apply/Cancel buttons section with just a Close button:
+const buttons = document.createElement('div');
+buttons.className = 'param-buttons';
+
+const closeBtn = document.createElement('button');
+closeBtn.textContent = 'Close';
+closeBtn.addEventListener('click', () => {
+  this._hideParameterPanel();
+});
+
+buttons.appendChild(closeBtn);
+panel.appendChild(buttons);
+}
+_createParameterInput(param, node){
+  const div = document.createElement('div');
+  div.className = 'param-input-group';
+  
+  const label = document.createElement('label');
+  label.textContent = param.label;
+  div.appendChild(label);
+  
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'param-input';
+  input.dataset.paramName = param.name;
+  input.dataset.paramType = param.type;
+
+  // Get current value
+  let currentValue = this._getNodeParameterValue(node, param.name, param.default);
+  input.value = String(currentValue);
+  input.placeholder = param.type === 'expression' ? 'Enter expression...' : `Default: ${param.default}`;
+  
+  // Real-time updates on input
+  input.addEventListener('input', () => {
+    this._updateNodeParameter(node, param.name, input.value.trim());
+  });
+  
+  // Numeric drag support for float parameters
+  if(param.type === 'float'){
+    this._addNumericDragSupport(input, node, param.name);
+  }
+  
+  div.appendChild(input);
+  return div;
+}
+
+_getNodeParameterValue(node, paramName, defaultValue){
+  if(paramName === 'value' && typeof node.value !== 'undefined') return node.value;
+  if(paramName === 'x' && typeof node.x !== 'undefined') return node.x;
+  if(paramName === 'y' && typeof node.y !== 'undefined') return node.y;
+  if(paramName === 'expr' && typeof node.expr !== 'undefined') return node.expr;
+  if(node.props && typeof node.props[paramName] !== 'undefined') return node.props[paramName];
+  return defaultValue;
+}
+
+_updateNodeParameter(node, paramName, value){
+  // Store the value
+  if(paramName === 'value') {
+    node.value = isNaN(Number(value)) ? value : Number(value);
+  } else if(paramName === 'x') {
+    node.x = isNaN(Number(value)) ? value : Number(value);
+  } else if(paramName === 'y') {
+    node.y = isNaN(Number(value)) ? value : Number(value);
+  } else if(paramName === 'expr') {
+    node.expr = value;
+  } else {
+    // For CircleField props and others
+    if(!node.props) node.props = {};
+    node.props[paramName] = isNaN(Number(value)) ? value : Number(value);
+  }
+  
+  // Immediate updates
+  if(this.onChange) this.onChange(); // Trigger shader recompilation
+  this.draw(); // Redraw canvas
+}
+
+_addNumericDragSupport(input, node, paramName){
+  let isDragging = false;
+  let startValue = 0;
+  let startY = 0;
+  
+  input.addEventListener('mousedown', (e) => {
+    if(e.button === 0 && e.shiftKey){ // Shift+click for drag mode
+      isDragging = true;
+      startValue = parseFloat(input.value) || 0;
+      startY = e.clientY;
+      input.style.cursor = 'ns-resize';
+      e.preventDefault();
+      
+      const onMouseMove = (e) => {
+        if(!isDragging) return;
+        const deltaY = startY - e.clientY; // Inverted: up = positive
+        const sensitivity = e.ctrlKey ? 0.001 : (e.altKey ? 0.1 : 0.01);
+        const newValue = startValue + (deltaY * sensitivity);
+        input.value = newValue.toFixed(3);
+        this._updateNodeParameter(node, paramName, input.value);
+        e.preventDefault();
+      };
+      
+      const onMouseUp = () => {
+        isDragging = false;
+        input.style.cursor = '';
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
+      
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    }
+  });
+  
+  // Add visual hint
+  input.title = 'Shift+drag to adjust value\nCtrl: fine precision, Alt: coarse precision';
+}
+
+
+
+
 _ensureMenuRoot(clientX, clientY){
   this._hideMenu();
   const el = document.createElement('div');
