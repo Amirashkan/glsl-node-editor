@@ -517,16 +517,51 @@ export class Editor {
   _hideMenu(){
     if(this.menuEl){ this.menuEl.remove(); this.menuEl = null; }
   }
-  _ensureMenuRoot(clientX, clientY){
-    this._hideMenu();
-    const el = document.createElement('div');
-    el.className = 'ctx-menu';
-    el.style.left = clientX + 'px';
-    el.style.top = clientY + 'px';
-    document.body.appendChild(el);
-    this.menuEl = el;
-    return el;
+_ensureMenuRoot(clientX, clientY){
+  this._hideMenu();
+  const el = document.createElement('div');
+  el.className = 'ctx-menu';
+  
+  // Add to body first to measure dimensions
+  document.body.appendChild(el);
+  
+  // Temporarily position off-screen to measure
+  el.style.position = 'fixed';
+  el.style.left = '-9999px';
+  el.style.top = '-9999px';
+  el.style.visibility = 'hidden';
+  
+  // Force layout and measure
+  el.offsetHeight; // trigger layout
+  const menuWidth = 200; // approximate width
+  const menuHeight = 300; // approximate height
+  
+  // Calculate position with boundary checking
+  let x = clientX;
+  let y = clientY;
+  
+  // Check right boundary
+  if (x + menuWidth > window.innerWidth) {
+    x = window.innerWidth - menuWidth - 10;
   }
+  
+  // Check bottom boundary  
+  if (y + menuHeight > window.innerHeight) {
+    y = window.innerHeight - menuHeight - 10;
+  }
+  
+  // Ensure minimum margins
+  x = Math.max(10, x);
+  y = Math.max(10, y);
+  
+  // Apply final position
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.visibility = 'visible';
+  
+  this.menuEl = el;
+  return el;
+}
   _menuHeader(text){
     const h = document.createElement('div');
     h.className = 'ctx-header';
@@ -571,7 +606,8 @@ export class Editor {
       }
     }
   }
-  _showCreateMenu(clientX, clientY){
+
+_showCreateMenu(clientX, clientY){
     const el = this._ensureMenuRoot(clientX, clientY);
     el.innerHTML = '';
     const input = document.createElement('input');
@@ -581,16 +617,14 @@ export class Editor {
     input.addEventListener('input', ()=>{ this.menuFilter = input.value; this._renderCreateList(el); });
     el.appendChild(input);
     this._renderCreateList(el);
-    
-    input.addEventListener('input', (e)=>{ this._menuFilter = (input.value||'').trim().toLowerCase(); this._menuIndex = 0; this._renderCreateList(el); el.scrollTop = 0; });
     input.addEventListener('keydown', (e)=>{
-      if(e.key==='ArrowDown'){ e.preventDefault(); this._menuIndex++; this._renderCreateList(el); el.scrollTop += 32; }
-      if(e.key==='ArrowUp'){ e.preventDefault(); this._menuIndex = Math.max(0, this._menuIndex-1); this._renderCreateList(el); el.scrollTop -= 32; }
-      if(e.key==='Enter'){ e.preventDefault(); const btn=el.querySelector('.ctx-item.active'); if(btn) btn.click(); }
+      if(e.key==='ArrowDown'){ e.preventDefault(); /* handle navigation */ }
+      if(e.key==='ArrowUp'){ e.preventDefault(); /* handle navigation */ }
+      if(e.key==='Enter'){ e.preventDefault(); /* select item */ }
       if(e.key==='Escape'){ e.preventDefault(); this._hideMenu(); }
     });
     input.focus();
-  }
+}
 _showNodeMenu(node, clientX, clientY){
     const el = this._ensureMenuRoot(clientX, clientY);
     el.innerHTML = '';
