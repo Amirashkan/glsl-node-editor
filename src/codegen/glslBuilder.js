@@ -1,3 +1,6 @@
+// src/codegen/glslBuilder.js
+// WGSL shader generation with proper syntax
+
 function topoOrder(graph){
   const nodes = graph.nodes || [];
   const byId = new Map(nodes.map(n => [n.id, n]));
@@ -15,11 +18,12 @@ function topoOrder(graph){
   return out;
 }
 
-function sanitize(id){ return String(id).replace(/[^a-zA-Z0-9_]/g,'_'); }
+function sanitize(id){ 
+  return String(id).replace(/[^a-zA-Z0-9_]/g,'_'); 
+}
 
 export function buildWGSL(graph){
   const ordered = topoOrder(graph);
-  const defs = [];
   const lines = [];
   const types = new Map();   // nodeId -> 'f32' | 'vec2' | 'vec3'
   const exprs = new Map();   // nodeId -> expression string
@@ -29,6 +33,7 @@ export function buildWGSL(graph){
     let e = exprs.get(id);
     let t = types.get(id);
     if(!e){ e = 'vec3<f32>(0.0)'; t = 'vec3'; }
+    
     function toVec3(e,t){
       if(t === 'vec3') return [e,'vec3'];
       if(t === 'vec2') return [`vec3<f32>(${e}.x, ${e}.y, 0.0)`, 'vec3'];
@@ -41,6 +46,7 @@ export function buildWGSL(graph){
       if(t === 'vec3') return [`(${e}.x + ${e}.y + ${e}.z) / 3.0`, 'f32'];
       return [e,'f32'];
     }
+    
     if(wantType === 'vec3') return toVec3(e,t)[0];
     if(wantType === 'vec2'){
       if(t === 'vec2') return e;
@@ -76,7 +82,6 @@ export function buildWGSL(graph){
       }
       case 'Expr': {
         const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
-        // b available if needed
         const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
         let expr = (n.expr || 'a').toString();
         expr = expr.replace(/\bu_time\b/g, 'u.time').replace(/\buv\b/g, 'in.uv');
@@ -126,6 +131,7 @@ export function buildWGSL(graph){
     }
 
     lines.push(line);
+    
     // Save expression/type for downstream
     if(n.kind === 'OutputFinal'){
       // Output doesn't produce new value; skip
@@ -135,20 +141,29 @@ export function buildWGSL(graph){
     }
   }
 
+  // Fixed WGSL code with proper syntax
   const code = /* wgsl */`
-struct Globals { time: f32, }
+struct Globals {
+  time: f32,
+}
+
 @group(0) @binding(0) var<uniform> u : Globals;
 
-struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+struct VSOut {
+  @builtin(position) pos: vec4<f32>,
+  @location(0) uv: vec2<f32>
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vid: u32) -> VSOut {
-  var p = array<vec2<f32>, 6>(
-    vec2<f32>(-1.0,-1.0), vec2<f32>( 1.0,-1.0), vec2<f32>(-1.0, 1.0),
-    vec2<f32>(-1.0, 1.0), vec2<f32>( 1.0,-1.0), vec2<f32>( 1.0, 1.0)
+  var p = array<vec2<f32>, 3>(
+    vec2<f32>(-1.0, -1.0), 
+    vec2<f32>( 3.0, -1.0), 
+    vec2<f32>(-1.0,  3.0)
   );
   var out: VSOut;
   out.pos = vec4<f32>(p[vid], 0.0, 1.0);
-  out.uv = 0.5 * (p[vid] + vec2<f32>(1.0,1.0));
+  out.uv = 0.5 * (p[vid] + vec2<f32>(1.0, 1.0));
   return out;
 }
 
@@ -156,7 +171,6 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> VSOut {
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   var finalColor: vec3<f32> = vec3<f32>(0.0);
   ${lines.join('\n  ')}
-  let __keep_uniform = u.time * 0.0;
   return vec4<f32>(finalColor, 1.0);
 }
 `;
