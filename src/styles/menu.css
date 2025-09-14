@@ -1,0 +1,87 @@
+/* src/styles/menu.css */
+
+.ctx-menu {
+  position: fixed;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  max-width: 250px;
+  z-index: 1000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.ctx-search {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid #444;
+  background: #1a1a1a;
+  color: #ddd;
+  font-size: 12px;
+  outline: none;
+}
+
+.ctx-search::placeholder {
+  color: #666;
+}
+
+.ctx-search:focus {
+  background: #222;
+}
+
+.ctx-header {
+  padding: 6px 12px;
+  background: #333;
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #444;
+}
+
+.ctx-item {
+  padding: 8px 12px;
+  color: #ddd;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  border-bottom: 1px solid transparent;
+}
+
+.ctx-item:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.ctx-item:active {
+  background: #4a4a4a;
+}
+
+.ctx-item:last-child {
+  border-bottom: none;
+}
+
+/* Menu animations */
+.ctx-menu {
+  animation: menuFadeIn 0.15s ease-out;
+}
+
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Hidden state */
+.hidden {
+  display: none !important;
+}

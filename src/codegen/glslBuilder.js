@@ -118,6 +118,18 @@ case 'CircleField': {
         outType = 'vec3';
         break;
       }
+      case 'Sin': {
+        const inp = want(n.inputs[0], 'f32');
+        line = `let node_${id} = sin(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Cos': {
+        const inp = want(n.inputs[0], 'f32');
+        line = `let node_${id} = cos(${inp});`;
+        outType = 'f32';
+        break;
+}
       case 'OutputFinal': {
         const c = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0,0.0,0.0)';
         line = `finalColor = ${c};`;
