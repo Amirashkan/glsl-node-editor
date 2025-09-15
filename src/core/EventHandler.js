@@ -10,6 +10,9 @@ export class EventHandler {
     this.onChange = options.onChange;
     this.onDraw = options.onDraw;
     
+    // Track when we open the parameter panel to prevent immediate closure
+    this.paramPanelJustOpened = false;
+    
     this._setupEvents();
   }
 
@@ -104,13 +107,31 @@ export class EventHandler {
 
       // Handle double-click for parameter panel
       if (e.detail === 2) {
+        // Set flag to prevent immediate closure
+        this.paramPanelJustOpened = true;
+        
+        // Clear the flag after a short delay
+        setTimeout(() => {
+          this.paramPanelJustOpened = false;
+        }, 100);
+        
         this.paramPanel.show(clicked, e.clientX, e.clientY);
+        e.preventDefault();
+        e.stopPropagation();
         return;
       }
 
       // Start node drag
       this.selection.startDrag(clicked.id, pos.x, pos.y);
       this.onDraw();
+    });
+
+    // CRITICAL FIX: Add click handler to canvas to prevent double-click from bubbling
+    this.canvas.addEventListener('click', (e) => {
+      if (this.paramPanelJustOpened) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
     });
 
     // Context menu
@@ -122,7 +143,7 @@ export class EventHandler {
       if (nodeHit) {
         this.menu.showNodeMenu(nodeHit, e.clientX, e.clientY);
       } else {
-    this.menu.showRadialMenu(pos.x, pos.y, e.clientX, e.clientY);
+        this.menu.showRadialMenu(pos.x, pos.y, e.clientX, e.clientY);
       }
     });
 
@@ -190,10 +211,17 @@ export class EventHandler {
 
   _setupGlobalEvents() {
     document.addEventListener('click', (e) => {
+      // Don't close panel if it was just opened
+      if (this.paramPanelJustOpened) {
+        return;
+      }
+      
       if (!this.menu.contains(e.target)) {
         this.menu.hide();
       }
-      if (!this.paramPanel.contains(e.target)) {
+      
+      // Only close parameter panel if click is truly outside
+      if (this.paramPanel.panel && !this.paramPanel.contains(e.target)) {
         this.paramPanel.hide();
       }
     });

@@ -42,6 +42,16 @@ export class ParameterPanel {
     panel.style.top = clientY + 'px';
     panel.style.zIndex = '1000';
     
+    // Prevent clicks inside the panel from bubbling up
+    panel.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    
+    // Prevent mousedown events from bubbling up
+    panel.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+    });
+    
     // Header
     const header = document.createElement('div');
     header.className = 'param-header';
@@ -60,7 +70,8 @@ export class ParameterPanel {
     
     const closeBtn = document.createElement('button');
     closeBtn.textContent = 'Close';
-    closeBtn.addEventListener('click', () => {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.hide();
     });
     
@@ -70,6 +81,14 @@ export class ParameterPanel {
     document.body.appendChild(panel);
     this.panel = panel;
     this.currentNode = node;
+    
+    // Focus the first input after a short delay
+    setTimeout(() => {
+      const firstInput = panel.querySelector('.param-input');
+      if (firstInput) {
+        firstInput.focus();
+      }
+    }, 10);
   }
 
   _createParameterInput(param, node) {
@@ -92,8 +111,14 @@ export class ParameterPanel {
     input.placeholder = param.type === 'expression' ? 'Enter expression...' : `Default: ${param.default}`;
     
     // Real-time updates on input
-    input.addEventListener('input', () => {
+    input.addEventListener('input', (e) => {
+      e.stopPropagation();
       this._updateNodeParameter(node, param.name, input.value.trim());
+    });
+    
+    // Prevent click events from bubbling up from the input
+    input.addEventListener('click', (e) => {
+      e.stopPropagation();
     });
     
     // Numeric drag support for float parameters
@@ -146,6 +171,7 @@ export class ParameterPanel {
         startY = e.clientY;
         input.style.cursor = 'ns-resize';
         e.preventDefault();
+        e.stopPropagation();
         
         const onMouseMove = (e) => {
           if (!isDragging) return;
