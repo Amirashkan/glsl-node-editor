@@ -5,6 +5,7 @@ import { Graph } from './src/data/Graph.js';
 import { makeNode, NodeDefs } from './src/data/NodeDefs.js';
 import { PreviewComputer } from './src/core/PreviewComputer.js';
 import { SeedGraphBuilder } from './src/utils/SeedGraphBuilder.js';
+import { FloatingGPUPreview } from './src/ui/FloatingGPUPreview.js';
 
 if (window.__mainLoaded) throw new Error('main.js loaded twice');
 window.__mainLoaded = true;
@@ -13,6 +14,7 @@ let graph = new Graph();
 let editor = null;
 let __deviceReady = false;
 let previewComputer = new PreviewComputer();
+let floatingPreview = null;
 
 async function initialize() {
   try {
@@ -25,9 +27,17 @@ async function initialize() {
     SeedGraphBuilder.createSeedGraph(graph);
     editor = new Editor(graph, updateShaderFromGraph);
     
+    const gpuCanvas = document.getElementById('gpu-canvas');
+    if (gpuCanvas) {
+      floatingPreview = new FloatingGPUPreview(gpuCanvas);
+      addPreviewButtons();
+      floatingPreview.show();
+    }
+    
     window.graph = graph;
     window.editor = editor;
     window.rebuild = updateShaderFromGraph;
+    window.floatingPreview = floatingPreview;
     
     await updateShaderFromGraph();
     renderLoop();
@@ -36,6 +46,35 @@ async function initialize() {
   } catch (error) {
     console.error('Initialization failed:', error);
   }
+}
+
+function addPreviewButtons() {
+  const hud = document.getElementById('hud');
+  if (!hud || !floatingPreview) return;
+  
+  const toggleBtn = document.createElement('button');
+  toggleBtn.textContent = 'Toggle Preview';
+  toggleBtn.addEventListener('click', () => floatingPreview.toggle());
+  
+  const dockBtn = document.createElement('button');
+  dockBtn.textContent = 'Dock Preview';
+  dockBtn.addEventListener('click', () => {
+    floatingPreview.toggleDocked();
+    dockBtn.textContent = floatingPreview.isDocked ? 'Float Preview' : 'Dock Preview';
+  });
+  
+  const lockBtn = document.createElement('button');
+  lockBtn.textContent = 'Lock Preview';
+  lockBtn.addEventListener('click', () => floatingPreview.toggleLock());
+  
+  const fullscreenBtn = document.createElement('button');
+  fullscreenBtn.textContent = 'Fullscreen';
+  fullscreenBtn.addEventListener('click', () => floatingPreview.toggleFullscreen());
+  
+  hud.insertBefore(dockBtn, hud.firstChild);
+  hud.insertBefore(toggleBtn, hud.firstChild);
+  hud.insertBefore(lockBtn, hud.firstChild);
+  hud.insertBefore(fullscreenBtn, hud.firstChild);
 }
 
 async function updateShaderFromGraph() {
@@ -54,6 +93,12 @@ async function updateShaderFromGraph() {
 function renderLoop() {
   if (__deviceReady) drawFrame();
   if (editor) editor.draw();
+  
+  // Update FPS counter
+  if (floatingPreview && floatingPreview.fpsCounter) {
+    floatingPreview.fpsCounter.frame();
+  }
+  
   requestAnimationFrame(renderLoop);
 }
 
