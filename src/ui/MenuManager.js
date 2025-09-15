@@ -24,10 +24,10 @@ export class MenuManager {
     }
   }
 
-contains(element) {
-  return (this.menuEl && this.menuEl.contains(element)) ||
-         (this.radialMenu && this.radialMenu.element && this.radialMenu.element.contains(element));
-}
+  contains(element) {
+    return (this.menuEl && this.menuEl.contains(element)) ||
+           (this.radialMenu && this.radialMenu.element && this.radialMenu.element.contains(element));
+  }
 
   showCreateMenu(canvasX, canvasY, clientX, clientY) {
     this.menuPos = { x: canvasX, y: canvasY };
@@ -51,15 +51,15 @@ contains(element) {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        // TODO: Navigate to first menu item
+        this._focusNextItem(el);
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault();
-        // TODO: Navigate to last menu item
+        this._focusPrevItem(el);
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        // TODO: Select highlighted item
+        this._activateFocusedItem(el);
       }
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -114,16 +114,21 @@ contains(element) {
       this.graph.selection = new Set([node.id]);
     }
     
-    el.appendChild(this._createMenuHeader('Node'));
+    const nodeType = NodeDefs[node.kind]?.cat || 'Misc';
+    const header = this._createMenuHeader('Node Actions');
+    header.setAttribute('data-category', nodeType);
+    el.appendChild(header);
+    
     el.appendChild(this._createMenuItem('Duplicate', () => {
       this._duplicateSelected();
       this.hide();
-    }));
+    }, nodeType));
+    
     el.appendChild(this._createMenuItem('Delete', () => {
       this.graph.selection = new Set([node.id]);
       this._deleteSelected();
       this.hide();
-    }));
+    }, nodeType));
   }
 
   _createMenuRoot(clientX, clientY) {
@@ -144,8 +149,8 @@ contains(element) {
     el.offsetHeight;
     
     // Calculate position with boundary checking
-    const menuWidth = 200;
-    const menuHeight = 300;
+    const menuWidth = 240;
+    const menuHeight = 400;
     
     let x = clientX;
     let y = clientY;
@@ -171,18 +176,37 @@ contains(element) {
     return el;
   }
 
-  _createMenuHeader(text) {
+  _createMenuHeader(text, category = null) {
     const h = document.createElement('div');
     h.className = 'ctx-header';
     h.textContent = text;
+    if (category) {
+      h.setAttribute('data-category', category);
+    }
     return h;
   }
 
-  _createMenuItem(text, onClick) {
+  _createMenuItem(text, onClick, category = null) {
     const item = document.createElement('div');
     item.className = 'ctx-item';
     item.textContent = text;
-    item.addEventListener('click', onClick);
+    item.tabIndex = 0; // Make focusable for keyboard navigation
+    if (category) {
+      item.setAttribute('data-category', category);
+    }
+    
+    const handleClick = () => {
+      if (onClick) onClick();
+    };
+    
+    item.addEventListener('click', handleClick);
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleClick();
+      }
+    });
+    
     return item;
   }
 
@@ -229,16 +253,59 @@ contains(element) {
       const visibleItems = items.filter(matches);
       if (visibleItems.length === 0) continue;
       
-      // Add category header
-      el.appendChild(this._createMenuHeader(categoryName));
+      // Add category header with color coding
+      const header = this._createMenuHeader(categoryName, categoryName);
+      el.appendChild(header);
       
-      // Add category items
+      // Add category items with color coding
       for (const item of visibleItems) {
-        el.appendChild(this._createMenuItem(item.label, () => {
+        const menuItem = this._createMenuItem(item.label, () => {
           this._createNode(item.kind);
           this.hide();
-        }));
+        }, categoryName);
+        el.appendChild(menuItem);
       }
+    }
+    
+    // If no results, show a message
+    if (filter && el.querySelectorAll('.ctx-item').length === 0) {
+      const noResults = document.createElement('div');
+      noResults.className = 'ctx-item';
+      noResults.textContent = 'No nodes found';
+      noResults.style.color = '#666';
+      noResults.style.fontStyle = 'italic';
+      el.appendChild(noResults);
+    }
+  }
+
+  _focusNextItem(el) {
+    const items = Array.from(el.querySelectorAll('.ctx-item[tabindex="0"]'));
+    const current = document.activeElement;
+    const currentIndex = items.indexOf(current);
+    
+    if (currentIndex < items.length - 1) {
+      items[currentIndex + 1].focus();
+    } else if (items.length > 0) {
+      items[0].focus(); // Wrap to first
+    }
+  }
+
+  _focusPrevItem(el) {
+    const items = Array.from(el.querySelectorAll('.ctx-item[tabindex="0"]'));
+    const current = document.activeElement;
+    const currentIndex = items.indexOf(current);
+    
+    if (currentIndex > 0) {
+      items[currentIndex - 1].focus();
+    } else if (items.length > 0) {
+      items[items.length - 1].focus(); // Wrap to last
+    }
+  }
+
+  _activateFocusedItem(el) {
+    const focused = document.activeElement;
+    if (focused && focused.classList.contains('ctx-item')) {
+      focused.click();
     }
   }
 

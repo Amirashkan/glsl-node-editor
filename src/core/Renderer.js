@@ -84,30 +84,61 @@ export class Renderer {
   _renderNode(node, isSelected) {
     const ctx = this.ctx;
 
-    // Draw node background
-    ctx.fillStyle = '#1b1b1b';
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 1;
+    // Enhanced node background with subtle gradient
+    const gradient = ctx.createLinearGradient(node.x, node.y, node.x, node.y + node.h);
+    gradient.addColorStop(0, '#252525');
+    gradient.addColorStop(1, '#1b1b1b');
+    
+    ctx.fillStyle = gradient;
+    ctx.strokeStyle = isSelected ? '#66aaff' : '#404040';
+    ctx.lineWidth = isSelected ? 2 : 1;
+    
     ctx.beginPath();
     ctx.roundRect(node.x, node.y, node.w, node.h, 8);
     ctx.fill();
     ctx.stroke();
 
-    // Draw node label
-    ctx.fillStyle = '#ddd';
-    ctx.font = `${12 / this.viewport.scale}px sans-serif`;
-    const label = NodeDefs[node.kind]?.label || node.kind;
-    ctx.fillText(label, node.x + 8, node.y + 18);
+    // Add subtle inner glow for selected nodes
+    if (isSelected) {
+      ctx.save();
+      ctx.shadowColor = '#66aaff';
+      ctx.shadowBlur = 8;
+      ctx.shadowInset = true;
+      ctx.strokeStyle = 'rgba(102, 170, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(node.x + 1, node.y + 1, node.w - 2, node.h - 2, 7);
+      ctx.stroke();
+      ctx.restore();
+    }
 
-    // Render thumbnail if available
+    // Draw node category indicator (small colored bar on the left)
+    const categoryColor = this._getCategoryColor(NodeDefs[node.kind]?.cat || 'default');
+    ctx.fillStyle = categoryColor;
+    ctx.fillRect(node.x, node.y + 8, 3, node.h - 16);
+
+    // Draw node label with better typography
+    ctx.fillStyle = '#e8e8e8';
+    ctx.font = `${Math.max(10, 12 / this.viewport.scale)}px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif`;
+    ctx.fontWeight = '500';
+    const label = NodeDefs[node.kind]?.label || node.kind;
+    ctx.fillText(label, node.x + 10, node.y + 18);
+
+    // Render enhanced thumbnail
     this._renderNodeThumbnail(node);
 
-    // Render pins
+    // Render pins with enhanced styling
     this._renderNodePins(node);
 
-    // Draw selection outline
-    if (isSelected) {
-      this._renderSelectionOutline(node);
+    // Add subtle drop shadow for depth
+    if (!isSelected) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.roundRect(node.x + 2, node.y + 2, node.w, node.h, 8);
+      ctx.fill();
+      ctx.restore();
     }
   }
 
@@ -115,79 +146,180 @@ export class Renderer {
     if (!node.__thumb) return;
 
     const ctx = this.ctx;
+    const thumbSize = 32; // Match the enhanced preview size
+    const padding = 6;
+    const thumbX = node.x + node.w - thumbSize - padding;
+    const thumbY = node.y + padding;
+
+    // Enhanced thumbnail background with border
+    ctx.save();
     
-    // Create/update thumbnail canvas if needed
-    if (!node.__thumbCanvas || node.__thumbCanvas.__ver !== node.__thumb) {
-      const canvas = document.createElement('canvas');
-      canvas.width = node.__thumb.width || 16;
-      canvas.height = node.__thumb.height || 16;
-      const canvasCtx = canvas.getContext('2d');
-      
-      try {
-        canvasCtx.putImageData(node.__thumb, 0, 0);
-      } catch(_) {
-        // Ignore putImageData errors
+    // Thumbnail background
+    ctx.fillStyle = '#0a0a0a';
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(thumbX - 1, thumbY - 1, thumbSize + 2, thumbSize + 2, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Handle both Canvas objects (new) and ImageData objects (old)
+    if (node.__thumb instanceof HTMLCanvasElement) {
+      // New enhanced Canvas-based thumbnails
+      ctx.drawImage(node.__thumb, thumbX, thumbY, thumbSize, thumbSize);
+    } else if (node.__thumb.data) {
+      // Legacy ImageData thumbnails - convert to canvas for better rendering
+      if (!node.__thumbCanvas || node.__thumbCanvas.__imageDataVer !== node.__thumb) {
+        const canvas = document.createElement('canvas');
+        canvas.width = node.__thumb.width || 16;
+        canvas.height = node.__thumb.height || 16;
+        const canvasCtx = canvas.getContext('2d');
+        
+        try {
+          canvasCtx.putImageData(node.__thumb, 0, 0);
+          canvas.__imageDataVer = node.__thumb;
+          node.__thumbCanvas = canvas;
+        } catch(e) {
+          console.warn('Failed to render thumbnail:', e);
+          return;
+        }
       }
       
-      canvas.__ver = node.__thumb;
-      node.__thumbCanvas = canvas;
+      // Draw the legacy thumbnail scaled up
+      ctx.imageSmoothingEnabled = false; // Pixel art scaling
+      ctx.drawImage(node.__thumbCanvas, thumbX, thumbY, thumbSize, thumbSize);
+      ctx.imageSmoothingEnabled = true;
     }
 
-    const tw = 16, th = 16;
-    ctx.drawImage(
-      node.__thumbCanvas, 
-      Math.floor(node.x + node.w - 4 - tw), 
-      Math.floor(node.y + 4), 
-      tw, th
-    );
+    // Add a subtle inner border to the thumbnail
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(thumbX, thumbY, thumbSize, thumbSize, 3);
+    ctx.stroke();
+
+    ctx.restore();
   }
 
   _renderNodePins(node) {
     const ctx = this.ctx;
     const { inputPins, outputPins } = this._getNodePinPositions(node);
 
-    // Render output pins (blue)
-    ctx.fillStyle = '#4aa3ff';
+    // Enhanced pin rendering with glow effects
+    ctx.save();
+
+    // Render output pins with enhanced styling
     for (const [i, pos] of outputPins.entries()) {
-      this._drawPin(pos.x, pos.y, 4);
+      const pinType = NodeDefs[node.kind]?.pinsOut?.[i]?.type || 'default';
+      const pinColor = this._getWireColor(pinType);
+      
+      // Pin glow effect
+      ctx.shadowColor = pinColor;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = pinColor;
+      this._drawEnhancedPin(pos.x, pos.y, 5, 'output');
+      
+      // Reset shadow for label
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      
       this._renderOutputPinLabel(node, i, pos);
     }
 
-    // Render input pins (red)
-    ctx.fillStyle = '#ff7a7a';
-    for (const pos of inputPins) {
-      this._drawPin(pos.x, pos.y, 4);
+    // Render input pins with enhanced styling
+    for (const [i, pos] of inputPins.entries()) {
+      const connected = node.inputs && node.inputs[i];
+      const pinColor = connected ? '#ff7a7a' : '#444';
+      
+      if (connected) {
+        ctx.shadowColor = '#ff7a7a';
+        ctx.shadowBlur = 6;
+      }
+      
+      ctx.fillStyle = pinColor;
+      this._drawEnhancedPin(pos.x, pos.y, 4, 'input');
+      
+      // Input pin label
+      if (!connected) {
+        const inputLabel = NodeDefs[node.kind]?.pinsIn?.[i] || `In${i}`;
+        ctx.fillStyle = '#666';
+        ctx.font = `${Math.max(8, 9 / this.viewport.scale)}px ui-monospace, Consolas, monospace`;
+        ctx.fillText(inputLabel, pos.x - ctx.measureText(inputLabel).width - 8, pos.y + 3);
+      }
     }
+
+    ctx.restore();
+  }
+
+  _drawEnhancedPin(x, y, radius, type) {
+    const ctx = this.ctx;
+    
+    // Outer ring
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 1, 0, Math.PI * 2);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Main pin
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Inner highlight
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(x - 1, y - 1, radius * 0.4, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   _renderOutputPinLabel(node, pinIndex, pinPos) {
     const ctx = this.ctx;
-    const pinType = (NodeDefs[node.kind]?.pinsOut?.[pinIndex]?.type) || '•';
+    const pinDef = NodeDefs[node.kind]?.pinsOut?.[pinIndex];
+    const pinType = pinDef?.type || '•';
     
     let labelText = pinType;
     
-    // Special cases for specific node types
+    // Enhanced labels with more context
     if (node.kind === 'ConstFloat' && typeof node.value === 'number') {
-      labelText = `${pinType}:${node.value.toFixed(3)}`;
+      labelText = `${node.value.toFixed(2)}`;
+    } else if (node.kind === 'ConstVec2' && node.x !== undefined && node.y !== undefined) {
+      labelText = `(${node.x.toFixed(1)}, ${node.y.toFixed(1)})`;
+    } else if (node.kind === 'ConstVec3' && node.x !== undefined) {
+      labelText = `(${(node.x || 0).toFixed(1)}, ${(node.y || 0).toFixed(1)}, ${(node.z || 0).toFixed(1)})`;
     } else if (node.kind === 'Expr' && node.expr) {
-      labelText = `${pinType}:${node.expr}`;
+      labelText = node.expr.length > 8 ? node.expr.substring(0, 8) + '...' : node.expr;
+    } else if (pinDef?.label) {
+      labelText = pinDef.label;
     }
 
+    // Skip label if it would be too cramped
+    if (this.viewport.scale < 0.7) return;
+
     ctx.save();
-    ctx.font = `${10 / this.viewport.scale}px ui-monospace,Consolas,monospace`;
-    const textWidth = ctx.measureText(labelText).width + 6;
+    ctx.font = `${Math.max(8, 9 / this.viewport.scale)}px ui-monospace, Consolas, monospace`;
+    const textWidth = ctx.measureText(labelText).width + 8;
     
-    // Draw label background
-    ctx.fillStyle = '#0f0f0f';
-    ctx.strokeStyle = '#2a2a2a';
+    // Enhanced label background with gradient
+    const gradient = ctx.createLinearGradient(
+      pinPos.x + 8, pinPos.y - 8, 
+      pinPos.x + 8, pinPos.y + 4
+    );
+    gradient.addColorStop(0, 'rgba(20, 20, 25, 0.95)');
+    gradient.addColorStop(1, 'rgba(15, 15, 20, 0.95)');
+    
+    ctx.fillStyle = gradient;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(pinPos.x + 6, pinPos.y - 8, textWidth, 12, 3);
+    ctx.roundRect(pinPos.x + 8, pinPos.y - 8, textWidth, 12, 3);
     ctx.fill();
     ctx.stroke();
     
-    // Draw label text
-    ctx.fillStyle = '#9aa0a6';
-    ctx.fillText(labelText, pinPos.x + 9, pinPos.y + 3);
+    // Label text with better color based on pin type
+    const textColor = this._getWireColor(pinType);
+    ctx.fillStyle = textColor;
+    ctx.fillText(labelText, pinPos.x + 12, pinPos.y + 2);
     ctx.restore();
   }
 
@@ -212,9 +344,10 @@ export class Renderer {
     const y1 = Math.max(boxSelect.y0, boxSelect.y1);
 
     ctx.save();
-    ctx.setLineDash([6, 4]);
+    ctx.setLineDash([8, 4]);
     ctx.strokeStyle = '#66aaff';
-    ctx.fillStyle = 'rgba(102,170,255,0.12)';
+    ctx.fillStyle = 'rgba(102, 170, 255, 0.08)';
+    ctx.lineWidth = 1.5;
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     ctx.restore();
@@ -249,9 +382,23 @@ export class Renderer {
   _getWireColor(type) {
     switch (type) {
       case 'f32': return '#ffd166';      // Yellow for floats
-      case 'vec2': return '#40c9b4';     // Teal for vec2
+      case 'vec2': return '#40c9b4';     // Teal for vec2  
       case 'vec3': return '#d06bff';     // Purple for vec3
-      default: return '#888';            // Gray for default
+      case 'vec4': return '#ff6b9d';     // Pink for vec4
+      default: return '#9aa0a6';         // Gray for default
+    }
+  }
+
+  _getCategoryColor(category) {
+    // Colors that match the menu system categories
+    switch (category) {
+      case 'Input': return '#10b981';    // Emerald
+      case 'Math': return '#f59e0b';     // Amber
+      case 'Field': return '#8b5cf6';    // Violet
+      case 'Utility': return '#06b6d4';  // Cyan
+      case 'Output': return '#ef4444';   // Red
+      case 'Misc': return '#6b7280';     // Gray
+      default: return '#6b7280';         // Gray
     }
   }
 
@@ -259,10 +406,18 @@ export class Renderer {
     const ctx = this.ctx;
     const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
     
+    // Add subtle shadow to wires
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetY = 1;
+    
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.bezierCurveTo(x1 + dx, y1, x2 - dx, y2, x2, y2);
     ctx.stroke();
+    
+    ctx.restore();
   }
 
   _drawPin(x, y, radius) {
