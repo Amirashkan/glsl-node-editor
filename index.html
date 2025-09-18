@@ -1,32 +1,29 @@
 <!doctype html>
-<html lang="fa">
+<html lang="En">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Rhizomium Web — Overhaul 3</title>
+  <title>GLSL Node Editor</title>
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div class="toolbar" role="toolbar">
-    <button id="btnSaveLocal">Save</button>
-    <button id="btnLoadLocal">Load</button>
-    <button id="btnImport">Import JSON</button>
-    <button id="btnExportJSON">Export JSON</button>
-    <button id="btnExportWGSL">Export WGSL</button>
-    <input id="fileImport" type="file" accept=".json,application/json" style="display:none">
-  </div>
-
   <canvas id="gpu-canvas"></canvas>
   <canvas id="ui-canvas"></canvas>
 
   <div id="hud">
-      <button id="btn-export-json">Export JSON</button>
-      <input id="file-import-json" type="file" accept=".json" style="display:none">
+    <button id="btn-toggle-preview">Toggle Preview</button>
+    <button id="btn-dock-preview">Dock Preview</button>
+    <button id="btn-lock-preview">Lock Preview</button>
+    <button id="btn-fullscreen-preview">Fullscreen</button>
     <label style="margin-right:8px"><input type="checkbox" id="snap-toggle"> Snap</label>
     <button id="btn-rebuild">Rebuild</button>
-    <button id="btn-save">Save</button>
-    <button id="btn-load">Load</button>
-    <button id="btn-export">Export WGSL</button>
+    <button id="btn-save">Save Project</button>
+    <button id="btn-load">Load Project</button>
+    <button id="btn-backups">Backups</button>
+    <button id="btn-export-json">Export JSON</button>
+    <button id="btn-export-wgsl">Export WGSL</button>
+    <button id="btn-import">Import</button>
+    <input id="file-import" type="file" accept=".json,.rz,.wgsl,.glsl" style="display:none">
     <span id="status">Idle</span>
   </div>
 
