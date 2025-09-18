@@ -9,6 +9,8 @@ export class PreviewSystem {
 
   // Generate preview for a single node
   generateNodePreview(node) {
+      console.log('Generating preview for:', node.kind, node.kind.toLowerCase()); // ADD THIS LINE
+
     if (!this.editor.isPreviewEnabled) {
       node.__thumb = null;
       return;
@@ -60,6 +62,32 @@ export class PreviewSystem {
         case 'outputfinal':
           this.renderOutput(ctx, node);
           break;
+        case 'random':
+          this.renderRandom(ctx, node);
+          break;
+        case 'valuenoise':
+          this.renderValueNoise(ctx, node);
+          break;
+        case 'fbmnoise':
+          this.renderFBMNoise(ctx, node);
+          break;
+        case 'simplexnoise':
+          this.renderSimplexNoise(ctx, node);
+          break;
+        case 'voronoinoise':
+          this.renderVoronoiNoise(ctx, node);
+          break;
+
+
+
+
+
+
+
+
+
+
+
         default:
           this.renderGeneric(ctx, node);
       }
@@ -72,7 +100,186 @@ export class PreviewSystem {
       node.__thumb = canvas;
     }
   }
+// Add these methods to your PreviewSystem class
 
+renderRandom(ctx, node) {
+  // Static noise pattern
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const noise = Math.random();
+      const color = Math.floor(noise * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+renderValueNoise(ctx, node) {
+  const scale = node.props?.scale ?? 5.0;
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = (x / this.size) * scale;
+      const v = (y / this.size) * scale;
+      
+      // Simple value noise approximation
+      const noise = this.simpleNoise(u, v);
+      const color = Math.floor((noise * 0.5 + 0.5) * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+renderFBMNoise(ctx, node) {
+  const scale = node.props?.scale ?? 3.0;
+  const octaves = node.props?.octaves ?? 4;
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = (x / this.size) * scale;
+      const v = (y / this.size) * scale;
+      
+      let noise = 0;
+      let amplitude = 1;
+      let frequency = 1;
+      let maxValue = 0;
+      
+      for (let i = 0; i < octaves; i++) {
+        noise += this.simpleNoise(u * frequency, v * frequency) * amplitude;
+        maxValue += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2;
+      }
+      
+      noise /= maxValue;
+      const color = Math.floor((noise * 0.5 + 0.5) * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+renderSimplexNoise(ctx, node) {
+  const scale = node.props?.scale ?? 4.0;
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = (x / this.size) * scale;
+      const v = (y / this.size) * scale;
+      
+      // Simplified simplex-style noise
+      const noise = this.simpleNoise(u * 1.5, v * 1.5) * 0.7 + this.simpleNoise(u * 3, v * 3) * 0.3;
+      const color = Math.floor((noise * 0.5 + 0.5) * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+renderRidgedNoise(ctx, node) {
+  const scale = node.props?.scale ?? 4.0;
+  const octaves = node.props?.octaves ?? 6;
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = (x / this.size) * scale;
+      const v = (y / this.size) * scale;
+      
+      let noise = 0;
+      let amplitude = 1;
+      let frequency = 1;
+      
+      for (let i = 0; i < octaves; i++) {
+        let n = this.simpleNoise(u * frequency, v * frequency);
+        n = Math.abs(n); // Ridge effect
+        n = 1.0 - n;
+        noise += n * amplitude;
+        amplitude *= 0.5;
+        frequency *= 2;
+      }
+      
+      const color = Math.floor(Math.min(noise, 1.0) * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+renderWarpNoise(ctx, node) {
+  const scale = node.props?.scale ?? 3.0;
+  const warpStrength = node.props?.warpStrength ?? 0.1;
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = (x / this.size) * scale;
+      const v = (y / this.size) * scale;
+      
+      // Simple warp
+      const warpX = this.simpleNoise(u * 2, v * 2) * warpStrength;
+      const warpY = this.simpleNoise(u * 2 + 5.2, v * 2 + 1.3) * warpStrength;
+      
+      const noise = this.simpleNoise(u + warpX, v + warpY);
+      const color = Math.floor((noise * 0.5 + 0.5) * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+renderVoronoiNoise(ctx, node) {
+  const scale = node.props?.scale ?? 8.0;
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = (x / this.size) * scale;
+      const v = (y / this.size) * scale;
+      
+      // Simple Voronoi cell approximation
+      const cellX = Math.floor(u);
+      const cellY = Math.floor(v);
+      
+      let minDist = 999;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const pointX = cellX + dx + this.pseudoRandom(cellX + dx, cellY + dy);
+          const pointY = cellY + dy + this.pseudoRandom(cellX + dx + 1, cellY + dy + 1);
+          
+          const dist = Math.sqrt((u - pointX) ** 2 + (v - pointY) ** 2);
+          minDist = Math.min(minDist, dist);
+        }
+      }
+      
+      const color = Math.floor((1.0 - Math.min(minDist, 1.0)) * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+// Helper methods for noise generation
+simpleNoise(x, y) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  
+  const a = this.hash2D(ix, iy);
+  const b = this.hash2D(ix + 1, iy);
+  const c = this.hash2D(ix, iy + 1);
+  const d = this.hash2D(ix + 1, iy + 1);
+  
+  const u = fx * fx * (3.0 - 2.0 * fx);
+  const v = fy * fy * (3.0 - 2.0 * fy);
+  
+  return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
+}
+
+hash2D(x, y) {
+  const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return (h - Math.floor(h)) * 2 - 1; // Range -1 to 1
+}
+pseudoRandom(x, y) {
+  return ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) * 0.5;
+}
   // Update all previews
   updateAllPreviews() {
     if (!this.editor.graph?.nodes) return;

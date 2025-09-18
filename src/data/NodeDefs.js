@@ -6,6 +6,200 @@ export const NodeDefs = {
     pinsIn: ['color'], pinsOut: [],
     params: [] 
   },
+  // Add these to your NodeDefs.js object
+Random: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'seed', label: 'Seed', type: 'float', default: 1.0 },
+    { name: 'scale', label: 'Scale', type: 'float', default: 1.0 }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'Random',
+    kind: 'Random',
+    x: 0, y: 0, w: 160, h: 80,
+    inputs: [null],
+    outputs: [],
+    props: {
+      seed: 1.0,
+      scale: 1.0
+    }
+  })
+},
+
+ValueNoise: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'scale', label: 'Scale', type: 'float', default: 5.0 },
+    { name: 'amplitude', label: 'Amplitude', type: 'float', default: 1.0 },
+    { name: 'offset', label: 'Offset', type: 'float', default: 0.0 },
+    { name: 'power', label: 'Power', type: 'float', default: 1.0 }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'ValueNoise',
+    kind: 'ValueNoise',
+    x: 0, y: 0, w: 180, h: 100,
+    inputs: [null],
+    outputs: [],
+    props: {
+      scale: 5.0,
+      amplitude: 1.0,
+      offset: 0.0,
+      power: 1.0
+    }
+  })
+},
+
+FBMNoise: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'scale', label: 'Scale', type: 'float', default: 3.0 },
+    { name: 'octaves', label: 'Octaves', type: 'int', default: 4 },
+    { name: 'persistence', label: 'Persistence', type: 'float', default: 0.5 },
+    { name: 'lacunarity', label: 'Lacunarity', type: 'float', default: 2.0 },
+    { name: 'amplitude', label: 'Amplitude', type: 'float', default: 1.0 },
+    { name: 'offset', label: 'Offset', type: 'float', default: 0.0 },
+    { name: 'gain', label: 'Gain', type: 'float', default: 0.5 },
+    { name: 'warp', label: 'Warp', type: 'float', default: 0.0 }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'FBMNoise',
+    kind: 'FBMNoise',
+    x: 0, y: 0, w: 200, h: 140,
+    inputs: [null],
+    outputs: [],
+    props: {
+      scale: 3.0,
+      octaves: 4,
+      persistence: 0.5,
+      lacunarity: 2.0,
+      amplitude: 1.0,
+      offset: 0.0,
+      gain: 0.5,
+      warp: 0.0
+    }
+  })
+},
+
+SimplexNoise: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'scale', label: 'Scale', type: 'float', default: 4.0 },
+    { name: 'amplitude', label: 'Amplitude', type: 'float', default: 1.0 },
+    { name: 'offset', label: 'Offset', type: 'float', default: 0.0 },
+    { name: 'ridge', label: 'Ridge Mode', type: 'bool', default: false },
+    { name: 'turbulence', label: 'Turbulence', type: 'bool', default: false }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'SimplexNoise',
+    kind: 'SimplexNoise',
+    x: 0, y: 0, w: 180, h: 100,
+    inputs: [null],
+    outputs: [],
+    props: {
+      scale: 4.0,
+      amplitude: 1.0,
+      offset: 0.0,
+      ridge: false,
+      turbulence: false
+    }
+  })
+},
+
+VoronoiNoise: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'scale', label: 'Scale', type: 'float', default: 8.0 },
+    { name: 'randomness', label: 'Randomness', type: 'float', default: 1.0 },
+    { name: 'minkowskiP', label: 'Distance Type', type: 'float', default: 2.0 },
+    { name: 'smoothness', label: 'Smoothness', type: 'float', default: 0.0 },
+    { name: 'cellType', label: 'Cell Type', type: 'int', default: 0 },
+    { name: 'outputType', label: 'Output Type', type: 'int', default: 0 }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'VoronoiNoise',
+    kind: 'VoronoiNoise',
+    x: 0, y: 0, w: 200, h: 120,
+    inputs: [null],
+    outputs: [],
+    props: {
+      scale: 8.0,
+      randomness: 1.0,
+      minkowskiP: 2.0,
+      smoothness: 0.0,
+      cellType: 0,
+      outputType: 0
+    }
+  })
+},
+
+RidgedNoise: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'scale', label: 'Scale', type: 'float', default: 4.0 },
+    { name: 'octaves', label: 'Octaves', type: 'int', default: 6 },
+    { name: 'lacunarity', label: 'Lacunarity', type: 'float', default: 2.0 },
+    { name: 'gain', label: 'Gain', type: 'float', default: 0.5 },
+    { name: 'amplitude', label: 'Amplitude', type: 'float', default: 1.0 },
+    { name: 'offset', label: 'Offset', type: 'float', default: 1.0 },
+    { name: 'threshold', label: 'Threshold', type: 'float', default: 0.0 }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'RidgedNoise',
+    kind: 'RidgedNoise',
+    x: 0, y: 0, w: 200, h: 120,
+    inputs: [null],
+    outputs: [],
+    props: {
+      scale: 4.0,
+      octaves: 6,
+      lacunarity: 2.0,
+      gain: 0.5,
+      amplitude: 1.0,
+      offset: 1.0,
+      threshold: 0.0
+    }
+  })
+},
+
+WarpNoise: {
+  inputs: 1,
+  outputs: 1,
+  params: [
+    { name: 'scale', label: 'Scale', type: 'float', default: 3.0 },
+    { name: 'warpScale', label: 'Warp Scale', type: 'float', default: 2.0 },
+    { name: 'warpStrength', label: 'Warp Strength', type: 'float', default: 0.1 },
+    { name: 'octaves', label: 'Octaves', type: 'int', default: 3 },
+    { name: 'amplitude', label: 'Amplitude', type: 'float', default: 1.0 }
+  ],
+  create: (id) => ({
+    id: id,
+    type: 'WarpNoise',
+    kind: 'WarpNoise',
+    x: 0, y: 0, w: 200, h: 120,
+    inputs: [null],
+    outputs: [],
+    props: {
+      scale: 3.0,
+      warpScale: 2.0,
+      warpStrength: 0.1,
+      octaves: 3,
+      amplitude: 1.0
+    }
+  })
+}
+,
   ConstFloat: { 
     label: 'Float', cat: 'Input', inputs: 0, 
     pinsIn: [], pinsOut: [{ label: 'v', type: 'f32' }], 
