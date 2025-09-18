@@ -75,20 +75,73 @@ function createPipelineAndBindGroup(wgsl) {
     },
   });
 
-  // Create bind group for uniforms
-  const bindGroup = _device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [
-      {
-        binding: 0,
-        resource: {
-          buffer: _uniformBuffer,
-        },
-      },
-    ],
-  });
+  // Check if the shader actually uses uniforms by inspecting the WGSL code
+  let bindGroup = null;
+  const usesUniforms = wgsl.includes('@group(0)') || wgsl.includes('u.time') || wgsl.includes('uniform');
+  
+  if (usesUniforms) {
+    try {
+      const bindGroupLayout = pipeline.getBindGroupLayout(0);
+      
+      bindGroup = _device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: _uniformBuffer,
+            },
+          },
+        ],
+      });
+      
+      console.log('✅ Shader uses uniforms - bind group created');
+      
+    } catch (error) {
+      console.log('⚠️ Shader declares uniforms but bind group creation failed:', error.message);
+      bindGroup = null;
+    }
+  } else {
+    console.log('ℹ️ Shader does not use uniforms - no bind group needed');
+  }
 
   return { pipeline, bindGroup };
+}
+
+export function render() {
+  if (!_device || !_context || !_pipeline) return;
+
+  // Only update uniforms if we have a bind group (shader uses uniforms)
+  if (_bindGroup) {
+    const time = performance.now() / 1000;
+    const timeData = new Float32Array([time]);
+    _device.queue.writeBuffer(_uniformBuffer, 0, timeData);
+  }
+
+  // Render
+  const encoder = _device.createCommandEncoder();
+  const view = _context.getCurrentTexture().createView();
+  
+  const pass = encoder.beginRenderPass({
+    colorAttachments: [{
+      view,
+      clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+      loadOp: "clear",
+      storeOp: "store"
+    }],
+  });
+
+  pass.setPipeline(_pipeline);
+  
+  // Only set bind group if the shader expects it
+  if (_bindGroup) {
+    pass.setBindGroup(0, _bindGroup);
+  }
+  
+  pass.draw(3, 1, 0, 0);
+  pass.end();
+  
+  _device.queue.submit([encoder.finish()]);
 }
 
 export async function setShaderSource(wgsl) {
@@ -112,9 +165,10 @@ export async function setShaderSource(wgsl) {
     if (msgs.length) throw msgs[0];
     
     _pipeline = result.pipeline;
-    _bindGroup = result.bindGroup;
+    _bindGroup = result.bindGroup; // This can be null for shaders without uniforms
     _lastCompileOK = true;
     
+    console.log(`Shader compiled successfully. Uses uniforms: ${_bindGroup !== null}`);
     return true;
   } catch (e) {
     _lastCompileOK = false;
@@ -124,35 +178,6 @@ export async function setShaderSource(wgsl) {
     }
     return false;
   }
-}
-
-export function render() {
-  if (!_device || !_context || !_pipeline || !_bindGroup) return;
-
-  // Update time uniform
-  const time = performance.now() / 1000;
-  const timeData = new Float32Array([time]);
-  _device.queue.writeBuffer(_uniformBuffer, 0, timeData);
-
-  // Render
-  const encoder = _device.createCommandEncoder();
-  const view = _context.getCurrentTexture().createView();
-  
-  const pass = encoder.beginRenderPass({
-    colorAttachments: [{
-      view,
-      clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1 },
-      loadOp: "clear",
-      storeOp: "store"
-    }],
-  });
-
-  pass.setPipeline(_pipeline);
-  pass.setBindGroup(0, _bindGroup);
-  pass.draw(3, 1, 0, 0); // Single triangle
-  pass.end();
-  
-  _device.queue.submit([encoder.finish()]);
 }
 
 // Backward-compatible aliases

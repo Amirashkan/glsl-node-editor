@@ -61,66 +61,76 @@ export class FloatingGPUPreview {
     }
   }
 
-  show() {
-    if (this.isVisible) return;
+// Replace your FloatingGPUPreview show() and hide() methods with these original working versions:
+
+show() {
+  if (this.isVisible) return;
+  
+  this.container = this._createContainer();
+  
+  if (this.isDocked) {
+    this._dockToWindow();
+  } else {
+    document.body.appendChild(this.container);
+  }
+  
+  // Move the actual WebGPU canvas to the preview window
+  const canvasWrapper = this.container.querySelector('.preview-canvas-wrapper');
+  canvasWrapper.appendChild(this.gpuCanvas);
+  
+  this.gpuCanvas.style.width = '100%';
+  this.gpuCanvas.style.height = '100%';
+  this.gpuCanvas.style.position = 'relative';
+  this.gpuCanvas.style.zIndex = 'auto';
+  
+  this.updateSize();
+  this._setupDragging();
+  
+  if (this.isDocked) {
+    this._setupDockedResize();
+  }
+  
+  this.isVisible = true;
+  
+  if (this.settings.settings.showFPS) {
+    this.fpsCounter.start();
+  }
+  
+  requestAnimationFrame(() => {
+    this.container.style.opacity = '1';
+    this.container.style.transform = 'scale(1)';
+  });
+}
+
+hide() {
+  if (!this.isVisible || !this.container) return;
+  
+  this.fpsCounter.stop();
+  
+  // Move the canvas back to its original container
+  const originalContainer = document.querySelector('.canvas-wrapper');
+  if (originalContainer && this.gpuCanvas) {
+    originalContainer.appendChild(this.gpuCanvas);
     
-    this.container = this._createContainer();
-    
-    if (this.isDocked) {
-      this._dockToWindow();
-    } else {
-      document.body.appendChild(this.container);
-    }
-    
-    const canvasWrapper = this.container.querySelector('.preview-canvas-wrapper');
-    canvasWrapper.appendChild(this.gpuCanvas);
-    
+    // Reset canvas styles
     this.gpuCanvas.style.width = '100%';
     this.gpuCanvas.style.height = '100%';
-    this.gpuCanvas.style.position = 'relative';
-    this.gpuCanvas.style.zIndex = 'auto';
-    
-    this.updateSize();
-    this._setupDragging();
-    
-    if (this.isDocked) {
-      this._setupDockedResize();
-    }
-    
-    this.isVisible = true;
-    
-    if (this.settings.settings.showFPS) {
-      this.fpsCounter.start();
-    }
-    
-    requestAnimationFrame(() => {
-      this.container.style.opacity = '1';
-      this.container.style.transform = 'scale(1)';
-    });
+    this.gpuCanvas.style.position = '';
+    this.gpuCanvas.style.zIndex = '';
   }
+  
+  this.container.style.opacity = '0';
+  this.container.style.transform = 'scale(0.95)';
+  
+  setTimeout(() => {
+    if (this.container && this.container.parentNode) {
+      this.container.parentNode.removeChild(this.container);
+    }
+    this.container = null;
+    this.isVisible = false;
+  }, 200);
+}
 
-  hide() {
-    if (!this.isVisible) return;
-    
-    this.settings.hideSettings();
-    this.fpsCounter.stop();
-    
-    this.container.style.opacity = '0';
-    this.container.style.transform = 'scale(0.95)';
-    
-    setTimeout(() => {
-      this.originalCanvasParent.appendChild(this.gpuCanvas);
-      Object.assign(this.gpuCanvas.style, this.originalCanvasStyles);
-      
-      if (this.container) {
-        this.container.remove();
-        this.container = null;
-      }
-      
-      this.isVisible = false;
-      this.isFullscreen = false;
-    }, 200);
-  }
 
   toggle() {
     this.isVisible ? this.hide() : this.show();

@@ -8,7 +8,61 @@ import { Graph } from './src/data/Graph.js';
 import { makeNode, NodeDefs } from './src/data/NodeDefs.js';
 import { SeedGraphBuilder } from './src/utils/SeedGraphBuilder.js';
 import { FloatingGPUPreview } from './src/ui/FloatingGPUPreview.js';
+window.makeNode = makeNode;
+window.NodeDefs = NodeDefs;
 
+
+async function reinitializeWebGPUAfterLoad() {
+  console.log("🔧 Reinitializing WebGPU after file load...");
+  
+  // Clean up any duplicate canvases
+  const allCanvases = document.querySelectorAll('#gpu-canvas');
+  console.log(`Found ${allCanvases.length} canvas elements with gpu-canvas id`);
+  
+  if (allCanvases.length > 1) {
+    console.log("⚠️ Multiple canvases detected, cleaning up...");
+    // Remove all but the first one
+    for (let i = 1; i < allCanvases.length; i++) {
+      allCanvases[i].remove();
+      console.log(`Removed duplicate canvas ${i}`);
+    }
+  }
+  
+  // Get the remaining canvas
+  const canvas = document.getElementById('gpu-canvas');
+  if (!canvas) {
+    console.error("❌ No GPU canvas found after cleanup");
+    return false;
+  }
+  
+  // Force WebGPU reinitialization
+  try {
+    console.log("🔄 Reinitializing WebGPU...");
+    
+    // Reset device ready flag
+    __deviceReady = false;
+    
+    // Reinitialize WebGPU with the canvas
+    const device = await initWebGPU(canvas);
+    __deviceReady = !!device;
+    
+    if (device) {
+      console.log("✅ WebGPU reinitialized successfully");
+      
+      // Force a shader update to test
+      console.log("🔄 Testing shader update...");
+      await updateShaderFromGraph();
+      
+      return true;
+    } else {
+      console.error("❌ Failed to reinitialize WebGPU");
+      return false;
+    }
+  } catch (error) {
+    console.error("❌ Error reinitializing WebGPU:", error);
+    return false;
+  }
+}
 if (window.__mainLoaded) throw new Error('main.js loaded twice');
 window.__mainLoaded = true;
 
@@ -143,9 +197,6 @@ async function initialize() {
   }
 }
 
-// Replace your setupUIEventHandlers function in main.js with this:
-
-// Replace your setupUIEventHandlers function in main.js with this:
 
 function setupUIEventHandlers() {
   console.log('Setting up UI event handlers...');
@@ -155,52 +206,204 @@ function setupUIEventHandlers() {
     return;
   }
 
-  // Save Project button
-  const saveBtn = document.getElementById('btn-save');
+  // PREVENT DOUBLE HANDLERS: Remove existing listeners first
+  const removeExistingHandlers = (elementId) => {
+    const el = document.getElementById(elementId);
+    if (el) {
+      // Clone and replace to remove all listeners
+      const newEl = el.cloneNode(true);
+      el.parentNode.replaceChild(newEl, el);
+      return newEl;
+    }
+    return null;
+  };
+
+  // Save Project button - prevent double handlers
+  const saveBtn = removeExistingHandlers('btn-save');
   if (saveBtn) {
     saveBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      console.log('Save button clicked');
+      console.log('=== SAVE BUTTON CLICKED ===');
       saveLoadManager.saveToFile();
     });
-    console.log('Save button handler attached');
+    console.log('Save button handler attached (clean)');
   }
 
   // Load Project button  
-  const loadBtn = document.getElementById('btn-load');
+  const loadBtn = removeExistingHandlers('btn-load');
   if (loadBtn) {
     loadBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      console.log('Load button clicked');
+      console.log('=== LOAD BUTTON CLICKED ===');
       triggerFileLoad();
     });
-    console.log('Load button handler attached');
+    console.log('Load button handler attached (clean)');
   }
 
   // File input change handler
-  const fileInput = document.getElementById('file-import');
-  if (fileInput) {
-    fileInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (file) {
-        console.log('Loading file:', file.name);
+// Add this to your main.js file - update the file input handler in setupUIEventHandlers
+
+// Replace the file input handler section with this:
+const fileInput = removeExistingHandlers('file-import');
+if (fileInput) {
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      console.log('=== FILE SELECTED ===', file.name);
+      
+      try {
         await saveLoadManager.loadFromFile(file);
-        // Clear the input after processing
-        e.target.value = '';
+        
+        // CRITICAL: Reinitialize WebGPU after loading
+        console.log('=== REINITIALIZING WEBGPU ===');
+        const webgpuSuccess = await reinitializeWebGPUAfterLoad();
+        
+        if (webgpuSuccess) {
+          console.log('✅ WebGPU reinitialized successfully after load');
+        } else {
+          console.error('❌ Failed to reinitialize WebGPU after load');
+        }
+        
+        // ADD THIS CODE RIGHT HERE:
+        console.log('=== FORCING NODE RECALCULATION ===');
+        if (graph && graph.nodes) {
+          graph.nodes.forEach(node => {
+            delete node.cachedValue;
+            delete node.cached;
+            node.needsUpdate = true;
+          });
+        // Add this after the node recalculation code in your file input handler:
+// Add this after node recalculation - simpler fix for preview refresh:
+console.log('=== TRIGGERING PREVIEW REFRESH ===');
+// Find any node with a connection and briefly disconnect it to unlock previews
+const nodeWithConnection = graph.nodes.find(node => 
+  node.inputs && node.inputs.some(input => input !== null)
+);
+
+if (nodeWithConnection) {
+  const inputIndex = nodeWithConnection.inputs.findIndex(input => input !== null);
+  const originalInput = nodeWithConnection.inputs[inputIndex];
+  
+  // Disconnect briefly to trigger global preview unlock
+  nodeWithConnection.inputs[inputIndex] = null;
+  
+  setTimeout(() => {
+    // Reconnect
+    nodeWithConnection.inputs[inputIndex] = originalInput;
+    if (editor.draw) {
+      editor.draw();
+    }
+  }, 10);
+}
+console.log('=== REFRESHING NODE PREVIEWS ===');
+if (editor && editor.nodePreviews) {
+  // Force refresh all node previews
+  graph.nodes.forEach(node => {
+    if (editor.nodePreviews.has(node.id)) {
+      // Get existing preview settings
+      const preview = editor.nodePreviews.get(node.id);
+      // Force refresh by removing and re-adding
+      editor.nodePreviews.delete(node.id);
+      editor.nodePreviews.set(node.id, {
+        enabled: preview.enabled,
+        size: preview.size || 'small',
+        showVisualInfo: preview.showVisualInfo !== false,
+        needsUpdate: true
+      });
+    } else {
+      // Create preview for nodes that don't have one
+      editor.nodePreviews.set(node.id, {
+        enabled: true,
+        size: 'small',
+        showVisualInfo: true,
+        needsUpdate: true
+      });
+    }
+  });
+  
+  // Force editor redraw to update previews
+  setTimeout(() => {
+    if (editor.draw) {
+      editor.draw();
+    }
+  }, 100);
+}// Add this after your node recalculation code in the file input handler:
+
+console.log('=== AUTO-REFRESHING NODE PREVIEWS ===');
+// Simulate disconnect/reconnect for all connections to refresh previews
+graph.nodes.forEach(node => {
+  if (node.inputs) {
+    node.inputs.forEach((input, index) => {
+      if (input) {
+        const originalInput = input;
+        // Disconnect
+        node.inputs[index] = null;
+        // Reconnect immediately
+        setTimeout(() => {
+          node.inputs[index] = originalInput;
+          if (editor.draw) {
+            editor.draw();
+          }
+        }, 5);
       }
     });
-    console.log('File input handler attached');
   }
+});
+
+// Final update after all connections are restored
+setTimeout(() => {
+  if (window.updateShaderFromGraph) {
+    updateShaderFromGraph();
+  }
+}, 50);  
+          // Trigger complete rebuild
+          setTimeout(() => updateShaderFromGraph(), 50);
+        }
+        
+        console.log('=== LOAD COMPLETE ===');
+        
+      } catch (error) {
+        console.error('Load failed:', error);
+      }
+      
+      // Clear the input after processing
+      e.target.value = '';
+    }
+  });
+  console.log('File input handler attached (clean)');
+}
+
+// ALSO ADD THIS: Update your updateShaderFromGraph function to notify the preview
+// Find your updateShaderFromGraph function and add this at the end:
+
+async function updateShaderFromGraphWithPreview() {
+  // Your existing updateShaderFromGraph code here...
+  const result = await updateShaderFromGraph();
+  
+  // THEN add this preview refresh:
+  if (window.floatingPreview) {
+    setTimeout(() => {
+      const mainCanvas = document.getElementById('gpu-canvas');
+      const previewCanvas = window.floatingPreview.canvas || window.floatingPreview.previewCanvas;
+      
+      if (mainCanvas && previewCanvas) {
+        const ctx = previewCanvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+          ctx.drawImage(mainCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
+        }
+      }
+    }, 100); // Small delay to ensure GPU render is complete
+  }
+  
+  return result;
+}
 
   // Helper function to reliably trigger file selection
   function triggerFileLoad() {
     const fileInput = document.getElementById('file-import');
     if (fileInput) {
-      // Force clear the value and refresh the input
       fileInput.value = '';
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-      
-      // Small delay to ensure the clear takes effect
       setTimeout(() => {
         fileInput.click();
       }, 10);
@@ -208,75 +411,61 @@ function setupUIEventHandlers() {
   }
 
   // Export JSON button
-  const exportJsonBtn = document.getElementById('btn-export-json');
+  const exportJsonBtn = removeExistingHandlers('btn-export-json');
   if (exportJsonBtn) {
     exportJsonBtn.addEventListener('click', (e) => {
       e.preventDefault();
       console.log('Export JSON clicked');
       saveLoadManager.saveToFile(null, 'json');
     });
-    console.log('Export JSON handler attached');
+    console.log('Export JSON handler attached (clean)');
   }
 
   // Export WGSL button
-  const exportWgslBtn = document.getElementById('btn-export-wgsl');
+  const exportWgslBtn = removeExistingHandlers('btn-export-wgsl');
   if (exportWgslBtn) {
     exportWgslBtn.addEventListener('click', (e) => {
       e.preventDefault();
       console.log('Export WGSL clicked');
       saveLoadManager.saveToFile(null, 'wgsl');
     });
-    console.log('Export WGSL handler attached');
+    console.log('Export WGSL handler attached (clean)');
   }
 
-  // Import button (same as load)
-  const importBtn = document.getElementById('btn-import');
+  // Import button
+  const importBtn = removeExistingHandlers('btn-import');
   if (importBtn) {
     importBtn.addEventListener('click', (e) => {
       e.preventDefault();
       console.log('Import button clicked');
       triggerFileLoad();
     });
-    console.log('Import button handler attached');
+    console.log('Import button handler attached (clean)');
   }
 
-  // Backups button (if you have BackupDialog)
-  const backupsBtn = document.getElementById('btn-backups');
+  // Backups button
+  const backupsBtn = removeExistingHandlers('btn-backups');
   if (backupsBtn && backupDialog) {
     backupsBtn.addEventListener('click', (e) => {
       e.preventDefault();
       console.log('Backups button clicked');
       backupDialog.show();
     });
-    console.log('Backups button handler attached');
+    console.log('Backups button handler attached (clean)');
   }
 
   // Rebuild button
-  const rebuildBtn = document.getElementById('btn-rebuild');
+  const rebuildBtn = removeExistingHandlers('btn-rebuild');
   if (rebuildBtn) {
     rebuildBtn.addEventListener('click', (e) => {
       e.preventDefault();
       console.log('Rebuild button clicked');
       updateShaderFromGraph();
     });
-    console.log('Rebuild button handler attached');
+    console.log('Rebuild button handler attached (clean)');
   }
 
-  // Snap toggle
-  const snapToggle = document.getElementById('snap-toggle');
-  if (snapToggle && editor) {
-    snapToggle.addEventListener('change', (e) => {
-      const isEnabled = e.target.checked;
-      console.log('Snap toggled:', isEnabled);
-      // Connect to your editor's snap functionality
-      if (editor.setSnapEnabled) {
-        editor.setSnapEnabled(isEnabled);
-      }
-    });
-    console.log('Snap toggle handler attached');
-  }
-
-  console.log('All UI event handlers setup complete');
+  console.log('=== ALL HANDLERS SETUP COMPLETE ===');
 }
 
 function setupKeyboardShortcuts() {

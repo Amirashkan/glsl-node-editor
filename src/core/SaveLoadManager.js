@@ -1,4 +1,52 @@
-// src/core/SaveLoadManager.js
+async function reinitializeWebGPUAfterLoad() {
+  console.log("🔧 Reinitializing WebGPU after file load...");
+  
+  // Clean up any duplicate canvases
+  const allCanvases = document.querySelectorAll('#gpu-canvas');
+  console.log(`Found ${allCanvases.length} canvas elements with gpu-canvas id`);
+  
+  if (allCanvases.length > 1) {
+    console.log("⚠️ Multiple canvases detected, cleaning up...");
+    // Remove all but the first one
+    for (let i = 1; i < allCanvases.length; i++) {
+      allCanvases[i].remove();
+      console.log(`Removed duplicate canvas ${i}`);
+    }
+  }
+  
+  // Get the remaining canvas
+  const canvas = document.getElementById('gpu-canvas');
+  if (!canvas) {
+    console.error("❌ No GPU canvas found after cleanup");
+    return false;
+  }
+  
+  // Force WebGPU reinitialization
+  try {
+    console.log("🔄 Reinitializing WebGPU...");
+    
+    // Reinitialize WebGPU with the canvas - adjust the path to match your file structure
+    const device = await initWebGPU(canvas); // This should call your existing initWebGPU function
+    
+    if (device) {
+      console.log("✅ WebGPU reinitialized successfully");
+      
+      // Force a shader update to test
+      console.log("🔄 Testing shader update...");
+      updateShaderFromGraph();
+      
+      return true;
+    } else {
+      console.error("❌ Failed to reinitialize WebGPU");
+      return false;
+    }
+  } catch (error) {
+    console.error("❌ Error reinitializing WebGPU:", error);
+    return false;
+  }
+}
+
+
 export class SaveLoadManager {
   constructor(editor, graph, updateCallback) {
     this.editor = editor;
@@ -68,6 +116,20 @@ export class SaveLoadManager {
   /**
    * Import project data and apply to current editor
    */
+// Replace your importProject method in SaveLoadManager.js with this:
+
+  /**
+   * Import project data and apply to current editor
+   *
+   */
+  
+  
+  
+
+
+  
+  
+  
   async importProject(projectData, options = {}) {
     const {
       clearExisting = true,
@@ -101,20 +163,78 @@ export class SaveLoadManager {
         this.importPreviews(projectData.previews);
       }
 
-      // Update shader and UI
-      await this.updateCallback();
-      if (this.editor.draw) this.editor.draw();
+      // CRITICAL: Force shader rebuild after loading
+      console.log('Forcing shader update after project load...');
+      
+      // Method 1: Try the callback
+      if (this.updateCallback) {
+        await this.updateCallback();
+      }
+      
+      // Method 2: Force update via global function (more reliable)
+      if (typeof window.updateShaderFromGraph === 'function') {
+        await window.updateShaderFromGraph();
+      } else if (typeof window.rebuild === 'function') {
+        await window.rebuild();
+      }
+      
+      // Method 3: Manual shader build if needed
+      if (typeof window.buildWGSL === 'function' && typeof window.updateShader === 'function') {
+        try {
+          const wgsl = window.buildWGSL(this.graph);
+          await window.updateShader(wgsl);
+          console.log('Manual shader update successful');
+        } catch (error) {
+          console.warn('Manual shader update failed:', error);
+        }
+      }
+
+      // Force editor redraw
+      if (this.editor && this.editor.draw) {
+        this.editor.draw();
+      }
+
+      // Force preview updates if available
+      if (this.editor && this.editor.previewIntegration) {
+        if (typeof this.editor.previewIntegration.onShaderUpdate === 'function') {
+          this.editor.previewIntegration.onShaderUpdate();
+        }
+      }
+
+      // Update any floating previews
+      if (window.floatingPreview && window.floatingPreview.refresh) {
+        window.floatingPreview.refresh();
+      }
 
       this.hasUnsavedChanges = false;
       this.updateStatus('Project loaded successfully');
       
+      console.log('Project import completed with shader update');
       return true;
+      
     } catch (error) {
       console.error('Import failed:', error);
+      this.updateStatus(`Import failed: ${error.message}`, 'error');
       throw new Error(`Failed to import project: ${error.message}`);
     }
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
   // =============================================================================
   // FILE OPERATIONS
   // =============================================================================
@@ -466,55 +586,67 @@ export class SaveLoadManager {
   // DATA IMPORT HELPERS
   // =============================================================================
 
-  importNodes(nodeData) {
-    const NodeDefs = window.NodeDefs || {};
-    
-    this.graph.nodes = (nodeData || []).map(data => {
-      const node = {
-        id: data.id,
-        kind: data.kind || 'Unknown',
-        x: data.position?.x || data.x || 0,
-        y: data.position?.y || data.y || 0,
-        w: data.size?.width || data.w || 180,
-        h: data.size?.height || data.h || 60,
-        inputs: []
-      };
+async importNodes(nodeData) {
+  this.graph.nodes = (nodeData || []).map(data => {
+    // Create node with proper type/kind properties
+    const node = {
+      id: data.id,
+      type: data.kind || 'Unknown',  // Set BOTH type and kind
+      kind: data.kind || 'Unknown',
+      x: data.position?.x || data.x || 0,
+      y: data.position?.y || data.y || 0,
+      w: data.size?.width || data.w || 180,
+      h: data.size?.height || data.h || 60,
+      inputs: [],
+      outputs: []
+    };
 
-      // Restore node-specific properties
-      if (data.value !== undefined) node.value = data.value;
-      if (data.xv !== undefined) node.xv = data.xv;
-      if (data.yv !== undefined) node.yv = data.yv;
-      if (data.expr) node.expr = data.expr;
-      if (data.props) node.props = { ...data.props };
+    // Restore node-specific properties
+    if (data.value !== undefined) node.value = data.value;
+    if (data.xv !== undefined) node.xv = data.xv;
+    if (data.yv !== undefined) node.yv = data.yv;
+    if (data.expr) node.expr = data.expr;
+    if (data.props) node.props = { ...data.props };
 
-      // Set up inputs array based on node definition
-      const def = NodeDefs[node.kind];
-      const inputCount = def?.inputs || (data.inputs?.length) || 0;
-      node.inputs = new Array(inputCount).fill(null);
+    // Set up inputs array - make sure it's the right length
+    const inputCount = data.inputs?.length || 0;
+    node.inputs = new Array(inputCount).fill(null).map(() => ({
+      connection: null,
+      value: undefined
+    }));
 
-      return node;
-    });
-  }
-
-  importConnections(connectionData) {
-    this.graph.connections = [...(connectionData || [])];
-    
-    // Update node input references
-    const nodeMap = new Map(this.graph.nodes.map(n => [n.id, n]));
-    
-    for (const conn of this.graph.connections) {
-      const toNode = nodeMap.get(conn.to.nodeId);
-      if (toNode && toNode.inputs) {
-        const pinIndex = conn.to.pin || 0;
-        if (pinIndex < toNode.inputs.length) {
-          toNode.inputs[pinIndex] = {
-            from: conn.from.nodeId,
-            pin: conn.from.pin || 0
-          };
-        }
+    return node;
+  });
+  
+  console.log('Nodes imported with types:', this.graph.nodes.map(n => ({ id: n.id, type: n.type, kind: n.kind })));
+}
+importConnections(connectionData) {
+  this.graph.connections = [...(connectionData || [])];
+  
+  // Create a map of nodeId -> node for fast lookup
+  const nodeMap = new Map(this.graph.nodes.map(n => [n.id, n]));
+  
+  // Set up the simple input format that matches the original working version
+  for (const conn of this.graph.connections) {
+    const toNode = nodeMap.get(conn.to.nodeId);
+    if (toNode && toNode.inputs) {
+      const toPin = conn.to.pin || 0;
+      const fromNodeId = String(conn.from.nodeId); // Convert to string to match original format
+      
+      // Make sure inputs array is long enough
+      while (toNode.inputs.length <= toPin) {
+        toNode.inputs.push(null);
       }
+      
+      // Use the simple format: just store the source node ID as a string
+      toNode.inputs[toPin] = fromNodeId;
+      
+      console.log(`Connected: node ${fromNodeId} → node ${toNode.id} input ${toPin}`);
     }
   }
+  
+  console.log('Connections imported using simple ID format');
+}
 
   importViewport(viewportData) {
     if (!this.editor?.viewport) return;
