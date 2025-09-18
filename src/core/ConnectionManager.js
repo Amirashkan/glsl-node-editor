@@ -47,6 +47,12 @@ export class ConnectionManager {
       }
 
       if (this.onChange) this.onChange();
+      
+      // UPDATE PREVIEWS WHEN CONNECTION ADDED
+      if (window.editor?.previewIntegration) {
+        window.editor.previewIntegration.updateAllPreviews();
+      }
+      
       this.dragWire = null;
       return true;
     }
@@ -63,6 +69,12 @@ export class ConnectionManager {
 
     if (this.graph.connections.length !== initialLength) {
       if (this.onChange) this.onChange();
+      
+      // UPDATE PREVIEWS WHEN CONNECTION REMOVED
+      if (window.editor?.previewIntegration) {
+        window.editor.previewIntegration.updateAllPreviews();
+      }
+      
       return true;
     }
     return false;

@@ -80,16 +80,40 @@ case 'ConstFloat': {
   outType = 'f32';
   break;
 }
-      case 'Expr': {
-        const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
-        const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
-        let expr = (n.expr || 'a').toString();
-        expr = expr.replace(/\bu_time\b/g, 'u.time').replace(/\buv\b/g, 'in.uv');
-        expr = expr.replace(/\ba\b/g, `(${a})`).replace(/\bb\b/g, `(${b})`);
-        line = `let node_${id} = ${expr};`;
-        outType = 'f32';
-        break;
-      }
+// Replace the 'Expr' case in your glslBuilder.js with this:
+
+// Replace the 'Expr' case in your glslBuilder.js with this:
+
+case 'Expr': {
+  const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
+  const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
+  let expr = (n.expr || 'a').toString();
+  
+  console.log('Original expression:', expr);
+  
+  // Replace variables with connected inputs FIRST (before function replacements)
+  expr = expr.replace(/\ba\b/g, `(${a})`);
+  expr = expr.replace(/\bb\b/g, `(${b})`);
+  
+  // Replace time and UV references
+  expr = expr.replace(/\bu_time\b/g, 'u.time');
+  expr = expr.replace(/\buv\b/g, 'in.uv');
+  
+  // Replace constants
+  expr = expr.replace(/\bpi\b/g, '3.14159265359');
+  expr = expr.replace(/\bPI\b/g, '3.14159265359');
+  
+  // Note: Don't replace function names - WGSL functions are the same as the input
+  // sin, cos, etc. are already valid WGSL function names
+  
+  console.log('Final WGSL expression:', expr);
+  
+  line = `let node_${id} = ${expr};`;
+  outType = 'f32';
+  break;
+}
+
+
 case 'CircleField': {
   // Use connected inputs if available, otherwise use node parameters, finally fallback to defaults
   const R = n.inputs?.[0] ? want(n.inputs[0],'f32') : (n.props?.radius ?? 0.25);

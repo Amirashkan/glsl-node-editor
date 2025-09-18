@@ -1,0 +1,857 @@
+// PreviewSystem.js - Complete working preview system
+
+export class PreviewSystem {
+  constructor(editor) {
+    this.editor = editor;
+    this.canvasCache = new Map();
+    this.size = 48;
+  }
+
+  // Generate preview for a single node
+  generateNodePreview(node) {
+    if (!this.editor.isPreviewEnabled) {
+      node.__thumb = null;
+      return;
+    }
+
+    try {
+      const canvas = this.getCanvas(node.id);
+      const ctx = canvas.getContext('2d');
+      
+      // Clear
+      ctx.fillStyle = '#141414';
+      ctx.fillRect(0, 0, this.size, this.size);
+      
+      // Route to specific renderer
+      switch (node.kind.toLowerCase()) {
+        case 'constfloat':
+        case 'float':
+          this.renderFloat(ctx, node);
+          break;
+        case 'multiply':
+          this.renderMath(ctx, node, '×', '#f59e0b');
+          break;
+        case 'add':
+          this.renderMath(ctx, node, '+', '#60a5fa');
+          break;
+        case 'subtract':
+          this.renderMath(ctx, node, '−', '#f87171');
+          break;
+        case 'divide':
+          this.renderMath(ctx, node, '÷', '#a78bfa');
+          break;
+        case 'circle':
+        case 'circlefield':
+          this.renderCircle(ctx, node);
+          break;
+        case 'uv':
+          this.renderUV(ctx, node);
+          break;
+        case 'time':
+          this.renderTime(ctx, node);
+          break;
+        case 'expr':
+          this.renderExpression(ctx, node);
+          break;
+        case 'saturate':
+          this.renderSaturate(ctx, node);
+          break;
+        case 'output':
+        case 'outputfinal':
+          this.renderOutput(ctx, node);
+          break;
+        default:
+          this.renderGeneric(ctx, node);
+      }
+      
+      node.__thumb = canvas;
+      
+    } catch (error) {
+      console.warn('Preview failed:', node.kind, error);
+      this.renderError(ctx, node);
+      node.__thumb = canvas;
+    }
+  }
+
+  // Update all previews
+  updateAllPreviews() {
+    if (!this.editor.graph?.nodes) return;
+    
+    this.editor.graph.nodes.forEach(node => {
+      this.generateNodePreview(node);
+    });
+    
+    this.editor.draw();
+  }
+
+  // Render float value
+  renderFloat(ctx, node) {
+    const value = this.getParameter(node, 'value') || 0;
+    
+    // Background color based on value
+    const intensity = Math.min(0.8, Math.abs(value) / 10);
+    const hue = value >= 0 ? 120 : 0;
+    
+    ctx.fillStyle = `hsl(${hue}, 60%, ${10 + intensity * 30}%)`;
+    ctx.fillRect(0, 0, this.size, this.size);
+    
+    // Value text
+    ctx.fillStyle = `hsl(${hue}, 80%, 80%)`;
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    const text = Math.abs(value) < 0.01 ? 
+      value.toExponential(1) : 
+      value.toFixed(2);
+    
+    ctx.fillText(text, this.size/2, this.size/2);
+    
+    // Grid
+    ctx.strokeStyle = `hsl(${hue}, 40%, 40%)`;
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < this.size; i += 8) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0); ctx.lineTo(i, this.size);
+      ctx.moveTo(0, i); ctx.lineTo(this.size, i);
+      ctx.stroke();
+    }
+  }
+
+  // Render math operations
+  renderMath(ctx, node, symbol, color) {
+    // Get actual input values
+    const inputs = this.getConnectedInputs(node);
+    const a = inputs.a || 1;
+    const b = inputs.b || 1;
+    
+    // Calculate result
+    let result;
+    switch (symbol) {
+      case '×': result = a * b; break;
+      case '+': result = a + b; break;
+      case '−': result = a - b; break;
+      case '÷': result = b !== 0 ? a / b : 0; break;
+      default: result = a + b;
+    }
+    
+    // Background
+    ctx.fillStyle = color + '20';
+    ctx.fillRect(0, 0, this.size, this.size);
+    
+    // Symbol
+    ctx.fillStyle = color;
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(symbol, this.size/2, this.size/2 - 4);
+    
+    // Result
+    ctx.font = '8px monospace';
+    ctx.fillText(result.toFixed(2), this.size/2, this.size/2 + 12);
+    
+    // Inputs
+    ctx.font = '6px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`A:${a.toFixed(1)}`, 2, 10);
+    ctx.fillText(`B:${b.toFixed(1)}`, 2, 18);
+  }
+
+  // Render circle field
+
+
+// Replace the renderCircle function in PreviewSystem.js with this:
+
+// Replace the renderCircle function in PreviewSystem.js with this:
+
+// Replace the renderCircle function in PreviewSystem.js with this:
+
+renderCircle(ctx, node) {
+  // Simple approach: always check BOTH sources and use whichever is available
+  const inputs = this.getConnectedInputs(node);
+  
+  // For radius: use connected input if available, otherwise use node parameter
+  let radius = 0.25;
+  if (inputs.a !== undefined) {
+    radius = inputs.a;  // Connected Float node wins
+  } else if (node.props?.radius !== undefined) {
+    radius = node.props.radius;  // Direct parameter as fallback
+  }
+  
+  // For epsilon: same logic
+  let epsilon = 0.02;
+  if (inputs.b !== undefined) {
+    epsilon = inputs.b;  // Connected Float node wins
+  } else if (node.props?.epsilon !== undefined) {
+    epsilon = node.props.epsilon;  // Direct parameter as fallback
+  }
+  
+  console.log('Circle preview - radius:', radius, 'epsilon:', epsilon, 'hasInputs:', !!inputs.a, !!inputs.b);
+  
+  // Rest of the rendering code stays the same
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, this.size, this.size);
+  
+  for (let y = 0; y < this.size; y++) {
+    for (let x = 0; x < this.size; x++) {
+      const u = x / this.size;
+      const v = y / this.size;
+      const dist = Math.sqrt((u - 0.5) * (u - 0.5) + (v - 0.5) * (v - 0.5));
+      const safeEpsilon = Math.max(epsilon, 0.0001);
+      const field = 1.0 - this.smoothstep(radius - safeEpsilon, radius + safeEpsilon, dist);
+      
+      if (field > 0.01) {
+        const intensity = Math.max(0, Math.min(1, field));
+        const color = Math.floor(intensity * 255);
+        ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+}
+
+// Add this smoothstep function to PreviewSystem class if it doesn't exist:
+smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(0.0001, edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
+  // Render UV coordinates
+  renderUV(ctx, node) {
+    for (let y = 0; y < this.size; y++) {
+      for (let x = 0; x < this.size; x++) {
+        const u = x / this.size;
+        const v = y / this.size;
+        const r = Math.floor(u * 255);
+        const g = Math.floor(v * 255);
+        ctx.fillStyle = `rgb(${r}, ${g}, 128)`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    
+    // Grid lines
+    ctx.strokeStyle = '#ffffff80';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(this.size/2, 0);
+    ctx.lineTo(this.size/2, this.size);
+    ctx.moveTo(0, this.size/2);
+    ctx.lineTo(this.size, this.size/2);
+    ctx.stroke();
+  }
+
+  // Render time node
+  renderTime(ctx, node) {
+    const time = (Date.now() / 1000) % (Math.PI * 2);
+    
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, this.size, this.size);
+    
+    // Sine wave
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    for (let x = 0; x < this.size; x++) {
+      const t = (x / this.size) * Math.PI * 2;
+      const y = this.size/2 + Math.sin(t + time) * this.size * 0.3;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    
+    // Time indicator
+    const indicatorX = (time / (Math.PI * 2)) * this.size;
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.arc(indicatorX, this.size/2, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Render expression
+// Replace the renderExpression function in PreviewSystem.js with this:
+// Replace the renderExpression function in PreviewSystem.js with this:
+// Replace the renderExpression function in PreviewSystem.js with this:
+
+// Replace the renderExpression function in PreviewSystem.js with this:
+
+// Replace the renderExpression function in PreviewSystem.js with this:
+
+// Replace the renderExpression function in PreviewSystem.js with this:
+
+// Replace the renderExpression function in PreviewSystem.js with this:
+
+renderExpression(ctx, node) {
+  const expr = this.getParameter(node, 'expr') || node.expr || 'x';
+  
+  console.log('Expression preview - expr:', expr);
+  
+  ctx.fillStyle = '#0c1821';
+  ctx.fillRect(0, 0, this.size, this.size);
+  
+  // Plot expression
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  let hasValidPlot = false;
+  let firstPoint = true;
+  
+  for (let x = 0; x < this.size; x++) {
+    try {
+      // Convert pixel x to mathematical domain
+      const mathX = (x / this.size) * 4 - 2; // Range: -2 to +2
+      
+      // Get connected inputs if any
+      const inputs = this.getConnectedInputs(node);
+      const a = inputs.a !== undefined ? inputs.a : mathX; // Use connected input or x-position
+      const b = inputs.b !== undefined ? inputs.b : 0;
+      
+      // Create evaluation context with scaled time for better visualization
+      const variables = {
+        x: mathX,
+        a: a,
+        b: b,
+        t: (Date.now() / 1000) % (Math.PI * 2), 
+        u_time: mathX * 10 + (Date.now() / 1000), // Use mathX as fake time progression + real time
+        pi: Math.PI,
+        PI: Math.PI
+      };
+      
+      const result = this.evaluateExpression(expr, variables);
+      
+      // Debug logging
+      if (x === 0 || x === 15 || x === 31) {
+        console.log(`x=${x}, mathX=${mathX}, a=${a}, result=${result}`);
+      }
+      
+      if (typeof result === 'number' && isFinite(result)) {
+        // For expressions like "a + sin(u_time*0.8)*0.05"
+        // The sine part varies, but it's tiny compared to the base value
+        
+        // Extract just the varying part by subtracting the base 'a' value
+        const variationFromBase = result - a;  // This isolates the sin(u_time*0.8)*0.05 part
+        
+        // Amplify the variation dramatically and center it on screen
+        const amplifiedY = this.size/2 - (variationFromBase * 1000);  // 1000x amplification
+        const clampedY = Math.max(0, Math.min(this.size - 1, amplifiedY));
+        
+        if (firstPoint) {
+          ctx.moveTo(x, clampedY);
+          firstPoint = false;
+        } else {
+          ctx.lineTo(x, clampedY);
+        }
+        hasValidPlot = true;
+      }
+    } catch (e) {
+      console.warn('Expression evaluation failed at x=', x, ':', e);
+      // Skip invalid points but continue plotting
+    }
+  }
+  
+  if (hasValidPlot) {
+    ctx.stroke();
+  } else {
+    // If no valid plot, show error indicator
+    ctx.fillStyle = '#ff4444';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ERR', this.size/2, this.size/2);
+  }
+  
+  // Expression text (smaller and at bottom)
+  ctx.fillStyle = '#10b981';
+  ctx.font = '6px monospace';
+  ctx.textAlign = 'left';
+  const displayExpr = expr.length > 10 ? expr.substring(0, 10) + '...' : expr;
+  ctx.fillText(displayExpr, 2, this.size - 2);
+}
+
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+
+
+// Also improve the evaluateExpression method:
+evaluateExpression(expr, vars) {
+  try {
+    let processed = expr.toString();
+    
+    // Replace variables first
+    for (const [name, value] of Object.entries(vars)) {
+      const regex = new RegExp(`\\b${name}\\b`, 'g');
+      processed = processed.replace(regex, `(${value})`);
+    }
+    
+    // Replace mathematical functions
+    processed = processed.replace(/\bsin\b/g, 'Math.sin');
+    processed = processed.replace(/\bcos\b/g, 'Math.cos'); 
+    processed = processed.replace(/\btan\b/g, 'Math.tan');
+    processed = processed.replace(/\babs\b/g, 'Math.abs');
+    processed = processed.replace(/\bfloor\b/g, 'Math.floor');
+    processed = processed.replace(/\bceil\b/g, 'Math.ceil');
+    processed = processed.replace(/\bsqrt\b/g, 'Math.sqrt');
+    processed = processed.replace(/\bpow\b/g, 'Math.pow');
+    processed = processed.replace(/\bmin\b/g, 'Math.min');
+    processed = processed.replace(/\bmax\b/g, 'Math.max');
+    processed = processed.replace(/\bpi\b/g, 'Math.PI');
+    processed = processed.replace(/\bPI\b/g, 'Math.PI');
+    
+    console.log('Evaluating:', processed);
+    const result = eval(processed);
+    return isFinite(result) ? result : 0;
+  } catch (e) {
+    console.warn('Expression evaluation error:', e);
+    return 0;
+  }
+}
+  // Render saturate
+  renderSaturate(ctx, node) {
+    const inputs = this.getConnectedInputs(node);
+    const input = inputs.input || 0.5;
+    const result = Math.max(0, Math.min(1, input));
+    
+    // Gradient showing saturation
+    for (let x = 0; x < this.size; x++) {
+      const testValue = (x / this.size) * 2 - 0.5;
+      const saturated = Math.max(0, Math.min(1, testValue));
+      const color = Math.floor(saturated * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(x, 0, 1, this.size);
+    }
+    
+    // Input/output indicators
+    const inputX = Math.floor((input + 0.5) * this.size / 2);
+    const outputX = Math.floor(result * this.size);
+    
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(inputX, this.size - 4, 1, 4);
+    
+    ctx.fillStyle = '#44ff44';
+    ctx.fillRect(outputX, 0, 1, 4);
+  }
+
+  // Render output
+  renderOutput(ctx, node) {
+    const inputs = this.getConnectedInputs(node);
+    const value = inputs.input || inputs.color || inputs.value || 0;
+    
+    if (typeof value === 'number') {
+      const intensity = Math.max(0, Math.min(1, value));
+      const color = Math.floor(intensity * 255);
+      ctx.fillStyle = `rgb(${color}, ${color}, ${color})`;
+      ctx.fillRect(0, 0, this.size, this.size);
+    } else {
+      this.renderGeneric(ctx, node);
+    }
+  }
+
+  // Render generic node
+  renderGeneric(ctx, node) {
+    const hash = this.hashString(node.kind);
+    const hue = hash % 360;
+    
+    ctx.fillStyle = `hsl(${hue}, 60%, 25%)`;
+    ctx.fillRect(0, 0, this.size, this.size);
+    
+    ctx.fillStyle = `hsl(${hue}, 80%, 70%)`;
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    const label = node.kind.substring(0, 4);
+    ctx.fillText(label, this.size/2, this.size/2);
+  }
+
+  // Render error state
+  renderError(ctx, node) {
+    ctx.fillStyle = '#2d1b1b';
+    ctx.fillRect(0, 0, this.size, this.size);
+    
+    ctx.fillStyle = '#ff4444';
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('ERR', this.size/2, this.size/2);
+  }
+
+  // Helper methods
+  getCanvas(nodeId) {
+    if (!this.canvasCache.has(nodeId)) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = this.size;
+      this.canvasCache.set(nodeId, canvas);
+    }
+    return this.canvasCache.get(nodeId);
+  }
+
+  getParameter(node, name) {
+  return node[name] || node.props?.[name] || 0;
+  }
+
+  getConnectedInputs(node) {
+    const inputs = {};
+    
+    if (!this.editor.graph?.connections) return inputs;
+    
+    // Find connections to this node
+    for (const conn of this.editor.graph.connections) {
+      if (conn.to.nodeId === node.id) {
+        const sourceNode = this.editor.graph.nodes.find(n => n.id === conn.from.nodeId);
+        if (sourceNode) {
+          const value = this.computeNodeValue(sourceNode);
+          
+          // Map pin index to input name
+          const pinNames = ['a', 'b', 'input', 'x', 'y', 'z'];
+          const inputName = pinNames[conn.to.pin] || `input${conn.to.pin}`;
+          inputs[inputName] = value;
+        }
+      }
+    }
+    
+    return inputs;
+  }
+
+
+computeNodeValue(node) {
+  switch (node.kind.toLowerCase()) {
+    case 'constfloat':
+    case 'float':
+      return this.getParameter(node, 'value') || 0;
+      case 'time':
+        return (Date.now() / 1000) % 1;
+      case 'uv':
+        return 0.5; // Return scalar for math operations
+      case 'circle':
+      case 'circlefield':
+        return this.getParameter(node, 'radius') || 0.5;
+      default:
+        return 0;
+    }
+  }
+
+  evaluateExpression(expr, vars) {
+    // Simple expression evaluator
+    try {
+      let processed = expr;
+      for (const [name, value] of Object.entries(vars)) {
+        processed = processed.replace(new RegExp(`\\b${name}\\b`, 'g'), value);
+      }
+      processed = processed.replace(/sin/g, 'Math.sin');
+      processed = processed.replace(/cos/g, 'Math.cos');
+      processed = processed.replace(/pi/g, 'Math.PI');
+      
+      return eval(processed);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  hashString(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash + str.charCodeAt(i)) & 0xffffffff;
+    }
+    return Math.abs(hash);
+  }
+
+  clearCache() {
+    this.canvasCache.clear();
+  }
+}
+
+// Integration code for Editor.js
+export class PreviewIntegration {
+  // Add this to PreviewIntegration class in PreviewSystem.js
+updateParameterPanel() {
+  // If parameter panel is open, refresh it to show current connected values
+  if (window.parameterPanel && window.parameterPanel.currentNode) {
+    const node = window.parameterPanel.currentNode;
+    // Find all parameter inputs and update their values
+    const inputs = window.parameterPanel.panel?.querySelectorAll('.param-input');
+    inputs?.forEach(input => {
+      const paramName = input.dataset.paramName;
+      if (paramName) {
+        const currentValue = window.parameterPanel._getNodeParameterValue(node, paramName, 0);
+        if (input.value !== String(currentValue)) {
+          input.value = String(currentValue);
+        }
+      }
+    });
+  }
+}
+  constructor(editor) {
+    this.editor = editor;
+    this.previewSystem = new PreviewSystem(editor);
+    
+    
+    // Generate initial previews
+    setTimeout(() => {
+      if (this.editor.isPreviewEnabled) {
+        this.updateAllPreviews();
+      }
+    }, 100);
+    
+    // Auto-update time-based nodes
+    setInterval(() => {
+      if (this.editor.isPreviewEnabled) {
+        this.updateTimeNodes();
+      }
+    }, 100);
+  }
+  
+  updateAllPreviews() {
+    this.previewSystem.updateAllPreviews();
+  }
+  
+  generateNodePreview(node) {
+    this.previewSystem.generateNodePreview(node);
+  }
+  
+  updateTimeNodes() {
+    if (!this.editor.graph?.nodes) return;
+    
+    const timeNodes = this.editor.graph.nodes.filter(n => 
+      n.kind.toLowerCase() === 'time'
+    );
+    
+    if (timeNodes.length > 0) {
+      timeNodes.forEach(node => this.previewSystem.generateNodePreview(node));
+      this.editor.draw();
+    }
+  }
+  
+  onParameterChange(node) {
+    this.generateNodePreview(node);
+    // Update dependent nodes
+    this.updateDependentNodes(node);
+  }
+  
+  updateDependentNodes(changedNode) {
+    if (!this.editor.graph?.connections) return;
+    
+    // Find nodes that depend on this one
+    const dependents = this.editor.graph.connections
+      .filter(conn => conn.from.nodeId === changedNode.id)
+      .map(conn => conn.to.nodeId);
+    
+    // Update their previews
+    dependents.forEach(nodeId => {
+      const node = this.editor.graph.nodes.find(n => n.id === nodeId);
+      if (node) {
+        this.generateNodePreview(node);
+      }
+    });
+    
+    this.editor.draw();
+    this.updateParameterPanel();
+
+  }
+}
+
+// Usage instructions:
+// 1. Add to Editor.js constructor:
+//    this.previewIntegration = new PreviewIntegration(this);
+//
+// 2. Add to ParameterPanel.js _updateNodeParameter:
+//    if (window.editor?.previewIntegration) {
+//      window.editor.previewIntegration.onParameterChange(node);
+//    }
+//
+// 3. Renderer.js _renderNodeThumbnail already works with node.__thumb

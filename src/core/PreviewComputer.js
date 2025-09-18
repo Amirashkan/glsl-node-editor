@@ -69,6 +69,8 @@ export class PreviewComputer {
                                   (node.props?.epsilon ?? 0.02));
           // For preview, we'll store the parameters for rendering
           result = { type: 'circle', radius, epsilon };
+            console.log('CircleField result:', result);
+
           break;
         }
 
@@ -387,37 +389,47 @@ export class PreviewComputer {
     }
   }
 
-  _renderCircleThumbnail(ctx, size, circleData) {
-    if (!circleData || typeof circleData !== 'object') {
-      this._renderDefaultThumbnail(ctx, size, circleData);
-      return;
-    }
-    
-    const { radius = 0.25, epsilon = 0.02 } = circleData;
-    
-    // Render the circle field as a gradient
-    const centerX = size / 2;
-    const centerY = size / 2;
-    const maxRadius = size / 2;
-    
-    const imageData = ctx.createImageData(size, size);
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const u = x / size;
-        const v = y / size;
-        const dist = Math.hypot(u - 0.5, v - 0.5);
-        const field = 1 - this._smoothstep(radius - epsilon, radius + epsilon, dist);
-        
-        const intensity = Math.max(0, Math.min(1, field)) * 255;
-        const idx = (y * size + x) * 4;
-        imageData.data[idx + 0] = intensity;     // R
-        imageData.data[idx + 1] = intensity * 0.5; // G
-        imageData.data[idx + 2] = intensity;     // B
-        imageData.data[idx + 3] = 255;           // A
-      }
-    }
-    ctx.putImageData(imageData, 0, 0);
+_renderCircleThumbnail(ctx, size, circleData) {
+  console.log('Circle thumbnail called with:', circleData);
+  if (!circleData || typeof circleData !== 'object') {
+    this._renderDefaultThumbnail(ctx, size, circleData);
+    return;
   }
+  
+  const { radius = 0.25, epsilon = 0.02 } = circleData;
+  
+  // Clear to black background first
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, size, size);
+  
+  const imageData = ctx.createImageData(size, size);
+  
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Convert to UV coordinates (0 to 1) - exactly like the shader
+      const u = x / size;
+      const v = y / size;
+      
+      // Distance from center (0.5, 0.5) - exactly like shader: distance(in.uv, vec2<f32>(0.5, 0.5))
+      const dist = Math.sqrt((u - 0.5) * (u - 0.5) + (v - 0.5) * (v - 0.5));
+      
+      // Ensure epsilon has minimum value like shader: max(epsilon, 0.0001)
+      const safeEpsilon = Math.max(epsilon, 0.0001);
+      
+      // Exact shader formula: 1.0 - smoothstep(radius - epsilon, radius + epsilon, distance)
+      const field = 1.0 - this._smoothstep(radius - safeEpsilon, radius + safeEpsilon, dist);
+      
+      // Convert to 0-255 intensity (grayscale)
+      const intensity = Math.max(0, Math.min(1, field)) * 255;
+      const idx = (y * size + x) * 4;
+      imageData.data[idx + 0] = intensity; // R
+      imageData.data[idx + 1] = intensity; // G  
+      imageData.data[idx + 2] = intensity; // B
+      imageData.data[idx + 3] = 255;       // A
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
 
   _renderWaveThumbnail(ctx, size, waveType) {
     ctx.fillStyle = '#1a1a1a';

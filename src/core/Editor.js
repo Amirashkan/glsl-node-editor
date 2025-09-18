@@ -1,4 +1,4 @@
-// src/core/Editor.js
+// src/core/Editor.js - CORRECTED VERSION
 import { EventHandler } from './EventHandler.js';
 import { Renderer } from './Renderer.js';
 import { MenuManager } from '../ui/MenuManager.js';
@@ -6,9 +6,15 @@ import { ParameterPanel } from '../ui/ParameterPanel.js';
 import { SelectionManager } from './SelectionManager.js';
 import { ConnectionManager } from './ConnectionManager.js';
 import { ViewportManager } from './ViewportManager.js';
+import { PreviewIntegration } from './PreviewSystem.js';
 
 export class Editor {
   constructor(graph, onChange) {
+    // Initialize preview state EARLY
+    this.isPreviewEnabled = true;
+    this.nodePreviews = new Map();
+    
+    // Set basic properties FIRST
     this.graph = graph;
     this.onChange = typeof onChange === 'function' ? onChange : () => {};
     
@@ -24,6 +30,12 @@ export class Editor {
     this.menu = new MenuManager(this.graph, this.onChange);
     this.paramPanel = new ParameterPanel(this.graph, this.onChange);
     
+    // Preview system settings
+    this.previewSizes = { small: 32, medium: 64, large: 96 };
+    
+    // Initialize NEW preview system
+    this.initializePreviewSystem();
+    
     // Initialize event handling
     this.eventHandler = new EventHandler({
       canvas: this.canvas,
@@ -33,7 +45,8 @@ export class Editor {
       menu: this.menu,
       paramPanel: this.paramPanel,
       onChange: this.onChange,
-      onDraw: () => this.draw()
+      onDraw: () => this.draw(),
+      editor: this
     });
     
     // Setup and initial render
@@ -63,8 +76,102 @@ export class Editor {
     this.renderer.render(this.graph, {
       selection: this.selection.getSelected(),
       dragWire: this.connections.getDragWire(),
-      boxSelect: this.selection.getBoxSelect()
+      boxSelect: this.selection.getBoxSelect(),
+      editor: this
     });
+  }
+
+  // ---- NEW Preview System ----
+  initializePreviewSystem() {
+    console.log('Initializing NEW Preview System');
+    
+    if (!this.graph || !this.graph.nodes) {
+      console.error('No graph or nodes available');
+      return;
+    }
+    
+    // Initialize the NEW preview system
+    this.previewIntegration = new PreviewIntegration(this);
+  }
+
+  // Node preview control methods
+  toggleNodePreview(nodeId) {
+    if (!this.nodePreviews.has(nodeId)) {
+      this.nodePreviews.set(nodeId, { 
+        enabled: true, 
+        size: 'small', 
+        showVisualInfo: true 
+      });
+    }
+    
+    const preview = this.nodePreviews.get(nodeId);
+    preview.enabled = !preview.enabled;
+    
+    console.log(`Preview toggled for node ${nodeId}: ${preview.enabled ? 'ON' : 'OFF'}`);
+    
+    if (preview.enabled) {
+      const node = this.graph.nodes.find(n => n.id === nodeId);
+      if (node) {
+        this.previewIntegration.generateNodePreview(node);
+      }
+    } else {
+      const node = this.graph.nodes.find(n => n.id === nodeId);
+      if (node) node.__thumb = null;
+    }
+    
+    this.draw();
+  }
+
+  cyclePreviewSize(nodeId) {
+    if (!this.nodePreviews.has(nodeId)) {
+      this.nodePreviews.set(nodeId, { enabled: true, size: 'small', showVisualInfo: true });
+    }
+    
+    const preview = this.nodePreviews.get(nodeId);
+    const sizes = ['small', 'medium', 'large'];
+    const currentIndex = sizes.indexOf(preview.size);
+    preview.size = sizes[(currentIndex + 1) % sizes.length];
+    
+    console.log(`Size changed to ${preview.size} for node ${nodeId}`);
+    
+    // Update preview with new size
+    if (this.isPreviewEnabled && preview.enabled) {
+      const node = this.graph.nodes.find(n => n.id === nodeId);
+      if (node) {
+        this.previewIntegration.generateNodePreview(node);
+      }
+    }
+    
+    this.draw();
+  }
+
+  toggleNodeVisualInfo(nodeId) {
+    if (!this.nodePreviews.has(nodeId)) {
+      this.nodePreviews.set(nodeId, { enabled: true, size: 'small', showVisualInfo: true });
+    }
+    const preview = this.nodePreviews.get(nodeId);
+    preview.showVisualInfo = !preview.showVisualInfo;
+    this.draw();
+  }
+
+  // Helper methods
+  shouldShowPreview(node) {
+    return this.isPreviewEnabled || !!node.__thumb;
+  }
+
+  isPreviewEnabled(nodeId) {
+    const preview = this.nodePreviews.get(nodeId);
+    return preview ? preview.enabled : true;
+  }
+
+  isVisualInfoEnabled(nodeId) {
+    const preview = this.nodePreviews.get(nodeId);
+    return preview ? preview.showVisualInfo : true;
+  }
+
+  getPreviewSize(nodeId) {
+    const preview = this.nodePreviews.get(nodeId);
+    return this.previewSizes[preview?.size || 'small'];
   }
 
   // ---- Selection API ----

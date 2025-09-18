@@ -9,7 +9,7 @@ export class EventHandler {
     this.paramPanel = options.paramPanel;
     this.onChange = options.onChange;
     this.onDraw = options.onDraw;
-    
+    this.editor = options.editor;
     // Track when we open the parameter panel to prevent immediate closure
     this.paramPanelJustOpened = false;
     
@@ -69,7 +69,6 @@ export class EventHandler {
   }
 
   _setupMouseEvents() {
-    // Mouse down - start interactions
     this.canvas.addEventListener('mousedown', (e) => {
       if (this.viewport.isPanning()) {
         e.preventDefault();
@@ -79,8 +78,11 @@ export class EventHandler {
       if (e.button === 2) return; // Let context menu handle right-click
       
       this.menu.hide();
-      const pos = this._getCanvasPosition(e);
-
+      const pos = this._getCanvasPosition(e);  // Define pos first
+      
+      if (this.checkPreviewControlClick(pos)) {  // Then use it
+        return; 
+      }
       // Check for output pin drag (wire creation)
       const hitOut = this.connections.hitOutputPin(pos.x, pos.y, this.selection.graph.nodes);
       if (hitOut) {
@@ -226,8 +228,65 @@ export class EventHandler {
       }
     });
   }
+// Fix for EventHandler.js checkPreviewControlClick method
 
-  // Helper methods
+// In your checkPreviewControlClick method, add the preview enabled check:
+// Replace your checkPreviewControlClick method with this:
+
+
+// Replace your checkPreviewControlClick method in EventHandler.js with this:
+
+checkPreviewControlClick(pos) {
+  if (!this.editor) return false;
+  
+  for (const node of this.editor.graph.nodes) {
+    // Always show controls if preview system is available
+    if (!this.editor.shouldShowPreview || !this.editor.shouldShowPreview(node)) continue;
+    
+    const controlY = node.y + 50;
+    const buttonHeight = 10;
+    const buttonWidth = 12;
+    
+    // Button 1: Hide visual info (X)
+    const hideX = node.x + node.w - 65;
+    if (pos.x >= hideX - 1 && pos.x <= hideX - 1 + buttonWidth && 
+        pos.y >= controlY - 8 && pos.y <= controlY - 8 + buttonHeight) {
+      this.editor.toggleNodeVisualInfo(node.id);
+      this.onDraw();
+      return true;
+    }
+    
+    // Button 2: Preview toggle (• / ○) - MAIN BUTTON
+    const eyeX = node.x + node.w - 45;
+    if (pos.x >= eyeX - 1 && pos.x <= eyeX - 1 + buttonWidth && 
+        pos.y >= controlY - 8 && pos.y <= controlY - 8 + buttonHeight) {
+      
+      console.log(`Clicked preview toggle button for node ${node.id}`);
+      
+      // This toggles the GLOBAL preview state
+      this.editor.toggleNodePreview(node.id);
+      this.onDraw();
+      return true;
+    }
+    
+    // Button 3: Size cycle (S/M/L) - only works when preview is enabled
+    const sizeX = node.x + node.w - 25;
+    if (pos.x >= sizeX - 1 && pos.x <= sizeX - 1 + buttonWidth && 
+        pos.y >= controlY - 8 && pos.y <= controlY - 8 + buttonHeight) {
+      
+      if (this.editor.isPreviewEnabled) {
+        this.editor.cyclePreviewSize(node.id);
+        this.onDraw();
+      }
+      return true; // Still consume click even if disabled
+    }
+  }
+  
+  return false;
+}
+
+
+// Helper methods
   _getCanvasPosition(e) {
     const rect = this.canvas.getBoundingClientRect();
     const px = (e.target === this.canvas && typeof e.offsetX === 'number') 

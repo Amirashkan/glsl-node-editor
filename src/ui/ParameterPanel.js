@@ -130,17 +130,159 @@ export class ParameterPanel {
     return div;
   }
 
-  _getNodeParameterValue(node, paramName, defaultValue) {
-    if (paramName === 'value' && typeof node.value !== 'undefined') return node.value;
-    if (paramName === 'x' && typeof node.x !== 'undefined') return node.x;
-    if (paramName === 'y' && typeof node.y !== 'undefined') return node.y;
-    if (paramName === 'expr' && typeof node.expr !== 'undefined') return node.expr;
-    if (node.props && typeof node.props[paramName] !== 'undefined') return node.props[paramName];
-    return defaultValue;
-  }
+// Replace _getNodeParameterValue in ParameterPanel.js with this:
 
-  _updateNodeParameter(node, paramName, value) {
-    // Store the value
+_getNodeParameterValue(node, paramName, defaultValue) {
+  // First check if there's a connected input for this parameter
+  const connectedValue = this._getConnectedInputValue(node, paramName);
+  if (connectedValue !== undefined) {
+    return connectedValue; // Show the connected input value in the panel
+  }
+  
+  // Otherwise use the stored parameter value
+  if (paramName === 'value' && typeof node.value !== 'undefined') return node.value;
+  if (paramName === 'x' && typeof node.x !== 'undefined') return node.x;
+  if (paramName === 'y' && typeof node.y !== 'undefined') return node.y;
+  if (paramName === 'expr' && typeof node.expr !== 'undefined') return node.expr;
+  if (node.props && typeof node.props[paramName] !== 'undefined') return node.props[paramName];
+  return defaultValue;
+}
+
+// Add this new method to ParameterPanel.js:
+
+_getConnectedInputValue(node, paramName) {
+  if (!this.graph?.connections) return undefined;
+  
+  // Map parameter names to input pin indices
+  const paramToPinMap = {
+    'radius': 0,
+    'epsilon': 1,
+    'value': 0,
+    'x': 0,
+    'y': 1,
+    'z': 2
+  };
+  
+  const pinIndex = paramToPinMap[paramName];
+  if (pinIndex === undefined) return undefined;
+  
+  // Find connection to this node's input pin
+  for (const conn of this.graph.connections) {
+    if (conn.to.nodeId === node.id && conn.to.pin === pinIndex) {
+      const sourceNode = this.graph.nodes.find(n => n.id === conn.from.nodeId);
+      if (sourceNode) {
+        // Get the value from the source node
+        return this._getSourceNodeValue(sourceNode);
+      }
+    }
+  }
+  
+  return undefined;
+}
+
+// Add this helper method to ParameterPanel.js:
+
+_getSourceNodeValue(node) {
+  switch (node.kind.toLowerCase()) {
+    case 'constfloat':
+    case 'float':
+      return node.props?.value || node.value || 0;
+    case 'time':
+      return (Date.now() / 1000) % 1;
+    case 'uv':
+      return 0.5;
+    default:
+      return 0;
+  }
+}
+
+// Also modify your _createParameterInput method to add real-time updates:
+
+_createParameterInput(param, node) {
+  const div = document.createElement('div');
+  div.className = 'param-input-group';
+  
+  const label = document.createElement('label');
+  label.textContent = param.label;
+  div.appendChild(label);
+  
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'param-input';
+  input.dataset.paramName = param.name;
+  input.dataset.paramType = param.type;
+
+  // Get current value (now includes connected input values)
+  let currentValue = this._getNodeParameterValue(node, param.name, param.default);
+  input.value = String(currentValue);
+  
+  // Check if this parameter has a connected input
+  const hasConnectedInput = this._getConnectedInputValue(node, param.name) !== undefined;
+  if (hasConnectedInput) {
+    input.style.backgroundColor = '#2a4a2a'; // Green tint to show it's connected
+    input.title = 'Connected to input - value reflects connected node';
+  }
+  
+  input.placeholder = param.type === 'expression' ? 'Enter expression...' : `Default: ${param.default}`;
+  
+  // Real-time updates on input
+  input.addEventListener('input', (e) => {
+    e.stopPropagation();
+    this._updateNodeParameter(node, param.name, input.value.trim());
+  });
+  
+  input.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  
+  // Numeric drag support for float parameters
+  if (param.type === 'float') {
+    this._addNumericDragSupport(input, node, param.name);
+  }
+  
+  // Store reference for real-time updates
+  input._paramName = param.name;
+  input._node = node;
+  
+  div.appendChild(input);
+  return div;
+}
+
+// Replace your _updateNodeParameter method with this:
+
+_updateNodeParameter(node, paramName, value) {
+  console.log('Parameter update:', node.kind, paramName, value);
+
+  // Check if this parameter has a connected input
+  const connectedSourceNode = this._findConnectedSourceNode(node, paramName);
+  
+  if (connectedSourceNode) {
+    // Update the source Float node instead of this node
+    console.log('Updating connected source node:', connectedSourceNode.kind, connectedSourceNode.id);
+    
+    // Update the source node's value
+    if (connectedSourceNode.kind === 'ConstFloat' || connectedSourceNode.kind === 'Float') {
+      const numValue = isNaN(Number(value)) ? 0 : Number(value);
+      
+      // Store in both places for compatibility
+      connectedSourceNode.value = numValue;
+      if (!connectedSourceNode.props) connectedSourceNode.props = {};
+      connectedSourceNode.props.value = numValue;
+      
+      console.log('Updated source Float node value to:', numValue);
+      
+      // Trigger updates for the source node
+      if (this.onChange) this.onChange(); // Trigger shader recompilation
+      
+      if (window.editor?.previewIntegration) {
+        console.log('Calling onParameterChange for source node:', connectedSourceNode.kind);
+        window.editor.previewIntegration.onParameterChange(connectedSourceNode);
+      }
+    }
+  } else {
+    // No connected input - update this node's parameter normally
+    console.log('No connected input - updating node parameter directly');
+    
     if (paramName === 'value') {
       node.value = isNaN(Number(value)) ? value : Number(value);
     } else if (paramName === 'x') {
@@ -157,7 +299,42 @@ export class ParameterPanel {
     
     // Immediate updates
     if (this.onChange) this.onChange(); // Trigger shader recompilation
+    
+    if (window.editor?.previewIntegration) {
+      console.log('Calling onParameterChange for:', node.kind);
+      window.editor.previewIntegration.onParameterChange(node);
+    }
   }
+}
+
+// Add this helper method to ParameterPanel.js:
+
+_findConnectedSourceNode(node, paramName) {
+  if (!this.graph?.connections) return null;
+  
+  // Map parameter names to input pin indices
+  const paramToPinMap = {
+    'radius': 0,
+    'epsilon': 1,
+    'value': 0,
+    'x': 0,
+    'y': 1,
+    'z': 2
+  };
+  
+  const pinIndex = paramToPinMap[paramName];
+  if (pinIndex === undefined) return null;
+  
+  // Find connection to this node's input pin
+  for (const conn of this.graph.connections) {
+    if (conn.to.nodeId === node.id && conn.to.pin === pinIndex) {
+      const sourceNode = this.graph.nodes.find(n => n.id === conn.from.nodeId);
+      return sourceNode || null;
+    }
+  }
+  
+  return null;
+}
 
   _addNumericDragSupport(input, node, paramName) {
     let isDragging = false;

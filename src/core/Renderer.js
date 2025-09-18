@@ -9,7 +9,9 @@ export class Renderer {
 
   render(graph, renderState) {
     const ctx = this.ctx;
-    
+      if (renderState.editor) {
+    window.editor = renderState.editor; // Make editor accessible
+  }
     // Clear canvas
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     
@@ -81,125 +83,216 @@ export class Renderer {
     }
   }
 
-  _renderNode(node, isSelected) {
-    const ctx = this.ctx;
+// Replace your _renderNode method in Renderer.js with this:
 
-    // Enhanced node background with subtle gradient
-    const gradient = ctx.createLinearGradient(node.x, node.y, node.x, node.y + node.h);
-    gradient.addColorStop(0, '#252525');
-    gradient.addColorStop(1, '#1b1b1b');
-    
-    ctx.fillStyle = gradient;
-    ctx.strokeStyle = isSelected ? '#66aaff' : '#404040';
-    ctx.lineWidth = isSelected ? 2 : 1;
-    
-    ctx.beginPath();
-    ctx.roundRect(node.x, node.y, node.w, node.h, 8);
-    ctx.fill();
-    ctx.stroke();
+_renderNode(node, isSelected) {
 
-    // Add subtle inner glow for selected nodes
-    if (isSelected) {
-      ctx.save();
-      ctx.shadowColor = '#66aaff';
-      ctx.shadowBlur = 8;
-      ctx.shadowInset = true;
-      ctx.strokeStyle = 'rgba(102, 170, 255, 0.3)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(node.x + 1, node.y + 1, node.w - 2, node.h - 2, 7);
-      ctx.stroke();
-      ctx.restore();
-    }
+  const ctx = this.ctx;
 
-    // Draw node category indicator (small colored bar on the left)
-    const categoryColor = this._getCategoryColor(NodeDefs[node.kind]?.cat || 'default');
-    ctx.fillStyle = categoryColor;
-    ctx.fillRect(node.x, node.y + 8, 3, node.h - 16);
+  // Make sure nodes have proper dimensions
+  if (!node.w) node.w = 120;  // Default width
+  if (!node.h) node.h = 80;   // Default height
 
-    // Draw node label with better typography
-    ctx.fillStyle = '#e8e8e8';
-    ctx.font = `${Math.max(10, 12 / this.viewport.scale)}px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif`;
-    ctx.fontWeight = '500';
-    const label = NodeDefs[node.kind]?.label || node.kind;
-    ctx.fillText(label, node.x + 10, node.y + 18);
+  // Enhanced node background with gradient
+  const gradient = ctx.createLinearGradient(node.x, node.y, node.x, node.y + node.h);
+  gradient.addColorStop(0, '#252525');
+  gradient.addColorStop(1, '#1b1b1b');
+  
+  ctx.fillStyle = gradient;
+  ctx.strokeStyle = isSelected ? '#66aaff' : '#404040';
+  ctx.lineWidth = isSelected ? 2 : 1;
+  
+  // Draw the main node rectangle
+  ctx.beginPath();
+  ctx.roundRect(node.x, node.y, node.w, node.h, 8);
+  ctx.fill();
+  ctx.stroke();
 
-    // Render enhanced thumbnail
-    this._renderNodeThumbnail(node);
-
-    // Render pins with enhanced styling
-    this._renderNodePins(node);
-
-    // Add subtle drop shadow for depth
-    if (!isSelected) {
-      ctx.save();
-      ctx.globalAlpha = 0.3;
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.roundRect(node.x + 2, node.y + 2, node.w, node.h, 8);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  _renderNodeThumbnail(node) {
-    if (!node.__thumb) return;
-
-    const ctx = this.ctx;
-    const thumbSize = 32; // Match the enhanced preview size
-    const padding = 6;
-    const thumbX = node.x + node.w - thumbSize - padding;
-    const thumbY = node.y + padding;
-
-    // Enhanced thumbnail background with border
+  // Add subtle inner glow for selected nodes
+  if (isSelected) {
     ctx.save();
-    
-    // Thumbnail background
-    ctx.fillStyle = '#0a0a0a';
-    ctx.strokeStyle = '#333';
+    ctx.shadowColor = '#66aaff';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = 'rgba(102, 170, 255, 0.3)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(thumbX - 1, thumbY - 1, thumbSize + 2, thumbSize + 2, 4);
-    ctx.fill();
+    ctx.roundRect(node.x + 1, node.y + 1, node.w - 2, node.h - 2, 7);
     ctx.stroke();
-
-    // Handle both Canvas objects (new) and ImageData objects (old)
-    if (node.__thumb instanceof HTMLCanvasElement) {
-      // New enhanced Canvas-based thumbnails
-      ctx.drawImage(node.__thumb, thumbX, thumbY, thumbSize, thumbSize);
-    } else if (node.__thumb.data) {
-      // Legacy ImageData thumbnails - convert to canvas for better rendering
-      if (!node.__thumbCanvas || node.__thumbCanvas.__imageDataVer !== node.__thumb) {
-        const canvas = document.createElement('canvas');
-        canvas.width = node.__thumb.width || 16;
-        canvas.height = node.__thumb.height || 16;
-        const canvasCtx = canvas.getContext('2d');
-        
-        try {
-          canvasCtx.putImageData(node.__thumb, 0, 0);
-          canvas.__imageDataVer = node.__thumb;
-          node.__thumbCanvas = canvas;
-        } catch(e) {
-          console.warn('Failed to render thumbnail:', e);
-          return;
-        }
-      }
-      
-      // Draw the legacy thumbnail scaled up
-      ctx.imageSmoothingEnabled = false; // Pixel art scaling
-      ctx.drawImage(node.__thumbCanvas, thumbX, thumbY, thumbSize, thumbSize);
-      ctx.imageSmoothingEnabled = true;
-    }
-
-    // Add a subtle inner border to the thumbnail
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(thumbX, thumbY, thumbSize, thumbSize, 3);
-    ctx.stroke();
-
     ctx.restore();
   }
+
+  // Draw node category indicator (small colored bar on the left)
+  const categoryColor = this._getCategoryColor(NodeDefs[node.kind]?.cat || 'default');
+  ctx.fillStyle = categoryColor;
+  ctx.fillRect(node.x, node.y + 8, 3, node.h - 16);
+
+  // Draw node label with better typography
+  ctx.fillStyle = '#e8e8e8';
+  ctx.font = `${Math.max(10, 12 / this.viewport.scale)}px -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif`;
+  ctx.fontWeight = '500';
+  const label = NodeDefs[node.kind]?.label || node.kind;
+  ctx.fillText(label, node.x + 10, node.y + 18);
+
+  // Render enhanced thumbnail
+  this._renderNodeThumbnail(node);
+  
+  // Render preview controls
+  this._renderPreviewControls(node);
+  
+  // Render pins with enhanced styling
+  this._renderNodePins(node);
+
+  // Add subtle drop shadow for depth (only for non-selected nodes)
+  if (!isSelected) {
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.roundRect(node.x + 2, node.y + 2, node.w, node.h, 8);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// Also make sure this method exists for category colors:
+_getCategoryColor(category) {
+  switch (category) {
+    case 'Input': return '#10b981';    // Emerald
+    case 'Math': return '#f59e0b';     // Amber
+    case 'Field': return '#8b5cf6';    // Violet
+    case 'Utility': return '#06b6d4';  // Cyan
+    case 'Output': return '#ef4444';   // Red
+    case 'Misc': return '#6b7280';     // Gray
+    default: return '#6b7280';         // Gray
+  }
+}
+
+
+_renderPreviewControls(node) {
+  const editor = window.editor;
+  if (!editor || !editor.shouldShowPreview(node)) return;
+  
+  const ctx = this.ctx;
+  const controlY = node.y + 50;
+  const buttonWidth = 12;
+  const buttonHeight = 10;
+  
+  // FIXED: Use property instead of function call
+  const isPreviewEnabled = editor.isPreviewEnabled;
+  
+  ctx.save();
+  ctx.font = `${Math.max(8, 9 / this.viewport.scale)}px ui-monospace, Consolas, monospace`;
+  
+  // Button 1: Hide visual info - "X"
+  const hideX = node.x + node.w - 65;
+  const showVisualInfo = editor.isVisualInfoEnabled(node.id);
+  
+  ctx.fillStyle = showVisualInfo ? 'rgba(68, 68, 68, 0.3)' : 'rgba(255, 68, 68, 0.2)';
+  ctx.beginPath();
+  ctx.roundRect(hideX - 1, controlY - 8, buttonWidth, buttonHeight, 2);
+  ctx.fill();
+  
+  ctx.fillStyle = showVisualInfo ? '#666' : '#ff4444';
+  ctx.fillText('X', hideX + 3, controlY - 1);
+  
+  // Button 2: Preview toggle - "•" when on, "○" when off
+  const eyeX = node.x + node.w - 45;
+  
+  ctx.fillStyle = isPreviewEnabled ? 'rgba(0, 255, 136, 0.2)' : 'rgba(68, 68, 68, 0.3)';
+  ctx.beginPath();
+  ctx.roundRect(eyeX - 1, controlY - 8, buttonWidth, buttonHeight, 2);
+  ctx.fill();
+  
+  ctx.fillStyle = isPreviewEnabled ? '#00ff88' : '#666';
+  ctx.fillText(isPreviewEnabled ? '•' : '○', eyeX + 3, controlY - 1);
+  
+  // Button 3: Size cycle - "S/M/L" (disabled when preview off)
+  const sizeX = node.x + node.w - 25;
+  const currentSize = editor.nodePreviews.get(node.id)?.size || 'small';
+  const sizeLabel = currentSize === 'small' ? 'S' : currentSize === 'medium' ? 'M' : 'L';
+  const sizeDisabled = !isPreviewEnabled;
+  
+  ctx.fillStyle = sizeDisabled ? 'rgba(40, 40, 40, 0.3)' : 'rgba(68, 68, 68, 0.3)';
+  ctx.beginPath();
+  ctx.roundRect(sizeX - 1, controlY - 8, buttonWidth, buttonHeight, 2);
+  ctx.fill();
+  
+  ctx.fillStyle = sizeDisabled ? '#333' : '#888';
+  ctx.fillText(sizeLabel, sizeX + 3, controlY - 1);
+  
+  ctx.restore();
+}
+
+
+// Update for Renderer.js _renderNodeThumbnail method
+// Replace your _renderNodeThumbnail method in Renderer.js with this:
+
+// Replace your _renderNodeThumbnail method with this:
+
+_renderNodeThumbnail(node) {
+  const editor = window.editor;
+  
+  // Only render if this specific node has a thumbnail
+  if (!node.__thumb) return;
+  
+  // Skip if editor doesn't exist (shouldn't happen, but safety check)
+  if (!editor) return;
+
+  const ctx = this.ctx;
+  const thumbSize = editor.getPreviewSize(node.id);
+  const padding = 6;
+  
+  // Smart positioning based on thumbnail size
+  let thumbX, thumbY;
+  
+  if (thumbSize <= 64) {
+    // Small/Medium: Traditional positioning
+    thumbX = node.x + node.w - thumbSize - padding;
+    thumbY = node.y + padding;
+  } else {
+    // Large: Position below node title to avoid overlap
+    thumbX = node.x + padding;
+    thumbY = node.y + 25; // Below title
+  }
+
+  ctx.save();
+  
+  // Thumbnail background
+  ctx.fillStyle = '#0a0a0a';
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(thumbX - 1, thumbY - 1, thumbSize + 2, thumbSize + 2, 4);
+  ctx.fill();
+  ctx.stroke();
+
+  // Enable smooth scaling for high-quality thumbnails
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  
+  // Handle both ImageData and Canvas thumbnails
+  if (node.__thumb instanceof HTMLCanvasElement) {
+    ctx.drawImage(node.__thumb, thumbX, thumbY, thumbSize, thumbSize);
+  } else if (node.__thumb instanceof ImageData) {
+    // Create temporary canvas for ImageData
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = node.__thumb.width;
+    tempCanvas.height = node.__thumb.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.putImageData(node.__thumb, 0, 0);
+    ctx.drawImage(tempCanvas, thumbX, thumbY, thumbSize, thumbSize);
+  }
+
+  // Inner border for clarity
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(thumbX, thumbY, thumbSize, thumbSize, 3);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 
   _renderNodePins(node) {
     const ctx = this.ctx;
@@ -274,54 +367,60 @@ export class Renderer {
   }
 
   _renderOutputPinLabel(node, pinIndex, pinPos) {
-    const ctx = this.ctx;
-    const pinDef = NodeDefs[node.kind]?.pinsOut?.[pinIndex];
-    const pinType = pinDef?.type || '•';
-    
-    let labelText = pinType;
-    
-    // Enhanced labels with more context
-    if (node.kind === 'ConstFloat' && typeof node.value === 'number') {
-      labelText = `${node.value.toFixed(2)}`;
-    } else if (node.kind === 'ConstVec2' && node.x !== undefined && node.y !== undefined) {
-      labelText = `(${node.x.toFixed(1)}, ${node.y.toFixed(1)})`;
-    } else if (node.kind === 'ConstVec3' && node.x !== undefined) {
-      labelText = `(${(node.x || 0).toFixed(1)}, ${(node.y || 0).toFixed(1)}, ${(node.z || 0).toFixed(1)})`;
-    } else if (node.kind === 'Expr' && node.expr) {
-      labelText = node.expr.length > 8 ? node.expr.substring(0, 8) + '...' : node.expr;
-    } else if (pinDef?.label) {
-      labelText = pinDef.label;
-    }
-
-    // Skip label if it would be too cramped
-    if (this.viewport.scale < 0.7) return;
-
-    ctx.save();
-    ctx.font = `${Math.max(8, 9 / this.viewport.scale)}px ui-monospace, Consolas, monospace`;
-    const textWidth = ctx.measureText(labelText).width + 8;
-    
-    // Enhanced label background with gradient
-    const gradient = ctx.createLinearGradient(
-      pinPos.x + 8, pinPos.y - 8, 
-      pinPos.x + 8, pinPos.y + 4
-    );
-    gradient.addColorStop(0, 'rgba(20, 20, 25, 0.95)');
-    gradient.addColorStop(1, 'rgba(15, 15, 20, 0.95)');
-    
-    ctx.fillStyle = gradient;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(pinPos.x + 8, pinPos.y - 8, textWidth, 12, 3);
-    ctx.fill();
-    ctx.stroke();
-    
-    // Label text with better color based on pin type
-    const textColor = this._getWireColor(pinType);
-    ctx.fillStyle = textColor;
-    ctx.fillText(labelText, pinPos.x + 12, pinPos.y + 2);
-    ctx.restore();
+  const editor = window.editor;
+  
+  // FIXED: Use property instead of function call
+  if (!editor || !editor.isPreviewEnabled) return;
+  
+  const ctx = this.ctx;
+  const pinDef = NodeDefs[node.kind]?.pinsOut?.[pinIndex];
+  const pinType = pinDef?.type || '•';
+  
+  let labelText = pinType;
+  
+  // Enhanced labels with more context
+  if (node.kind === 'ConstFloat' && typeof node.value === 'number') {
+    labelText = `${node.value.toFixed(2)}`;
+  } else if (node.kind === 'ConstVec2' && node.x !== undefined && node.y !== undefined) {
+    labelText = `(${node.x.toFixed(1)}, ${node.y.toFixed(1)})`;
+  } else if (node.kind === 'ConstVec3' && node.x !== undefined) {
+    labelText = `(${(node.x || 0).toFixed(1)}, ${(node.y || 0).toFixed(1)}, ${(node.z || 0).toFixed(1)})`;
+  } else if (node.kind === 'Expr' && node.expr) {
+    labelText = node.expr.length > 8 ? node.expr.substring(0, 8) + '...' : node.expr;
+  } else if (pinDef?.label) {
+    labelText = pinDef.label;
   }
+
+  // Skip label if it would be too cramped
+  if (this.viewport.scale < 0.7) return;
+
+  ctx.save();
+  ctx.font = `${Math.max(8, 9 / this.viewport.scale)}px ui-monospace, Consolas, monospace`;
+  const textWidth = ctx.measureText(labelText).width + 8;
+  
+  // Enhanced label background with gradient
+  const gradient = ctx.createLinearGradient(
+    pinPos.x + 8, pinPos.y - 8, 
+    pinPos.x + 8, pinPos.y + 4
+  );
+  gradient.addColorStop(0, 'rgba(20, 20, 25, 0.95)');
+  gradient.addColorStop(1, 'rgba(15, 15, 20, 0.95)');
+  
+  ctx.fillStyle = gradient;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(pinPos.x + 8, pinPos.y - 8, textWidth, 12, 3);
+  ctx.fill();
+  ctx.stroke();
+  
+  // Label text with better color based on pin type
+  const textColor = this._getWireColor(pinType);
+  ctx.fillStyle = textColor;
+  ctx.fillText(labelText, pinPos.x + 12, pinPos.y + 2);
+  ctx.restore();
+}
+
 
   _renderSelectionOutline(node) {
     const ctx = this.ctx;

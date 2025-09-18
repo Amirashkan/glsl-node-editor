@@ -3,7 +3,6 @@ import { buildWGSL } from './src/codegen/glslBuilder.js';
 import { Editor } from './src/core/Editor.js';
 import { Graph } from './src/data/Graph.js';
 import { makeNode, NodeDefs } from './src/data/NodeDefs.js';
-import { PreviewComputer } from './src/core/PreviewComputer.js';
 import { SeedGraphBuilder } from './src/utils/SeedGraphBuilder.js';
 import { FloatingGPUPreview } from './src/ui/FloatingGPUPreview.js';
 
@@ -13,7 +12,6 @@ window.__mainLoaded = true;
 let graph = new Graph();
 let editor = null;
 let __deviceReady = false;
-let previewComputer = new PreviewComputer();
 let floatingPreview = null;
 
 async function initialize() {
@@ -84,7 +82,6 @@ async function updateShaderFromGraph() {
     await updateShader(wgsl);
     const codeEl = document.getElementById('code');
     if (codeEl) codeEl.textContent = wgsl;
-    previewComputer.computePreviews(graph);
   } catch (e) {
     console.warn('Shader update failed:', e);
   }
