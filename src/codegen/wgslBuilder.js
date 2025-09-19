@@ -350,6 +350,170 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         outType = 'vec3';
         break;
       }
+
+
+
+case 'Sin': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = sin(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Cos': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = cos(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Tan': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = tan(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Floor': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = floor(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Fract': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = fract(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Abs': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = abs(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Sqrt': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = sqrt(max(${inp}, 0.0));`;
+  outType = 'f32';
+  break;
+}
+
+case 'Pow': {
+  const base = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '1.0';
+  const exp = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '2.0';
+  line = `let node_${id} = pow(${base}, ${exp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Min': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+  line = `let node_${id} = min(${a}, ${b});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Max': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+  line = `let node_${id} = max(${a}, ${b});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Clamp': {
+  const value = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  const minVal = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+  const maxVal = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.0';
+  line = `let node_${id} = clamp(${value}, ${minVal}, ${maxVal});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Smoothstep': {
+  const edge0 = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  const edge1 = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '1.0';
+  const x = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.5';
+  line = `let node_${id} = smoothstep(${edge0}, ${edge1}, ${x});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Step': {
+  const edge = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.5';
+  const x = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+  line = `let node_${id} = step(${edge}, ${x});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Subtract': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
+  line = `let node_${id} = (${a}) - (${b});`;
+  outType = 'vec3';
+  break;
+}
+
+case 'Divide': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(1.0)';
+  line = `let node_${id} = (${a}) / max((${b}), vec3<f32>(0.0001));`;
+  outType = 'vec3';
+  break;
+}
+
+case 'Length': {
+  const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+  line = `let node_${id} = length(${vec});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Distance': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
+  line = `let node_${id} = distance(${a}, ${b});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Dot': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+  line = `let node_${id} = dot(${a}, ${b});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Normalize': {
+  const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+  line = `let node_${id} = normalize(${vec});`;
+  outType = 'vec3';
+  break;
+}
+
+case 'Sign': {
+  const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  line = `let node_${id} = sign(${inp});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Mod': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '1.0';
+  line = `let node_${id} = ${a} - ${b} * floor(${a} / max(${b}, 0.0001));`;
+  outType = 'f32';
+  break;
+}
+
+
       case 'OutputFinal': {
         const c = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0,0.0,0.0)';
         line = `finalColor = ${c};`;
@@ -482,6 +646,5 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   var finalColor: vec3<f32> = vec3<f32>(0.0);
   ${lines.join('\n  ')}
   let _keep_uniform = u.time * 0.0;
-  return vec4<f32>(finalColor, 1.0);
-}`;
-}
+return vec4<f32>(finalColor + vec3<f32>(_keep_uniform), 1.0);}`;
+}a

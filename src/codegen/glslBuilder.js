@@ -23,7 +23,72 @@ function sanitize(id){
 }
 
 export function buildWGSL(graph){
-  const ordered = topoOrder(graph);
+  let ordered = topoOrder(graph);
+  
+  // DEBUG: Log all nodes and their types
+  console.log('=== DEBUG: All nodes before filtering ===');
+  if (graph.nodes) {
+    graph.nodes.forEach(node => {
+      console.log(`Node ${node.id}: kind="${node.kind}" type="${node.type}" name="${node.name}"`);
+    });
+  }
+  
+  console.log('=== DEBUG: Ordered nodes ===');
+  ordered.forEach(node => {
+    console.log(`Ordered: ${node.id} -> kind="${node.kind}"`);
+  });
+
+  function pickActiveOutput(graph){
+    const outs = (graph.nodes||[]).filter(n => /OutputFinal/i.test(n.kind||n.type||n.name||''));
+    const connected = outs.filter(o => Array.isArray(o.inputs) && o.inputs[0]);
+    if (connected.length) return connected[connected.length-1];
+    return outs[outs.length-1] || null;
+  }
+  
+  function upstreamSet(start, byId){
+    const vis = new Set();
+    (function dfs(id){
+      if(!id || vis.has(id)) return;
+      vis.add(id);
+      const n = byId.get(id);
+      if(!n) return;
+      for(const inp of (n.inputs||[])) if(inp) dfs(inp);
+    })(start);
+    return vis;
+  }
+  
+  const outNode = pickActiveOutput(graph);
+  if (outNode){
+    const byId = new Map((graph.nodes||[]).map(n => [n.id, n]));
+    const keep = upstreamSet(outNode.id, byId);
+    ordered = ordered.filter(n => keep.has(n.id));
+  }
+
+  if (!outNode || ordered.length === 0) {
+    return `
+struct Globals { time: f32, }
+@group(0) @binding(0) var<uniform> u : Globals;
+struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
+@vertex
+fn vs_main(@builtin(vertex_index) vid: u32) -> VSOut {
+  var p = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0,-1.0), vec2<f32>( 1.0,-1.0), vec2<f32>(-1.0, 1.0),
+    vec2<f32>(-1.0, 1.0), vec2<f32>( 1.0,-1.0), vec2<f32>( 1.0, 1.0)
+  );
+  var out: VSOut;
+  out.pos = vec4<f32>(p[vid], 0.0, 1.0);
+  out.uv = 0.5 * (p[vid] + vec2<f32>(1.0,1.0));
+  return out;
+}
+fn random(st: vec2<f32>) -> f32 {
+  return fract(sin(dot(st, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+}
+@fragment
+fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
+  return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+}`;
+  }
+  
   const lines = [];
   const types = new Map();   // nodeId -> 'f32' | 'vec2' | 'vec3'
   const exprs = new Map();   // nodeId -> expression string
@@ -62,7 +127,9 @@ export function buildWGSL(graph){
     const id = sanitize(n.id);
     let line = '';
     let outType = 'vec3';
-
+    
+    console.log(`Processing node ${id}: kind="${n.kind}"`);
+    
     switch(n.kind){
       case 'UV': {
         line = `let node_${id} = in.uv;`;
@@ -74,59 +141,53 @@ export function buildWGSL(graph){
         outType = 'f32';
         break;
       }
-case 'ConstFloat': {
-  const v = (typeof n.value === 'number') ? n.value : (n.props?.value ?? 0.0);
-  line = `let node_${id} = ${v.toFixed(6)};`;
-  outType = 'f32';
-  break;
-}
-// Replace the 'Expr' case in your glslBuilder.js with this:
-
-// Replace the 'Expr' case in your glslBuilder.js with this:
-
-case 'Expr': {
-  const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
-  const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
-  let expr = (n.expr || 'a').toString();
-  
-  console.log('Original expression:', expr);
-  
-  // Replace variables with connected inputs FIRST (before function replacements)
-  expr = expr.replace(/\ba\b/g, `(${a})`);
-  expr = expr.replace(/\bb\b/g, `(${b})`);
-  
-  // Replace time and UV references
-  expr = expr.replace(/\bu_time\b/g, 'u.time');
-  expr = expr.replace(/\buv\b/g, 'in.uv');
-  
-  // Replace constants
-  expr = expr.replace(/\bpi\b/g, '3.14159265359');
-  expr = expr.replace(/\bPI\b/g, '3.14159265359');
-  
-  // Note: Don't replace function names - WGSL functions are the same as the input
-  // sin, cos, etc. are already valid WGSL function names
-  
-  console.log('Final WGSL expression:', expr);
-  
-  line = `let node_${id} = ${expr};`;
-  outType = 'f32';
-  break;
-}
-
-
-case 'CircleField': {
-  // Use connected inputs if available, otherwise use node parameters, finally fallback to defaults
-  const R = n.inputs?.[0] ? want(n.inputs[0],'f32') : (n.props?.radius ?? 0.25);
-  const E = n.inputs?.[1] ? want(n.inputs[1],'f32') : (n.props?.epsilon ?? 0.02);
-  line = `let node_${id} = 1.0 - smoothstep((${R}) - max(${E}, 0.0001), (${R}) + max(${E}, 0.0001), distance(in.uv, vec2<f32>(0.5, 0.5)));`;
-  outType = 'f32';
-  break;
-}
+      case 'ConstFloat': {
+        const v = (typeof n.value === 'number') ? n.value : (n.props?.value ?? 0.0);
+        line = `let node_${id} = ${v.toFixed(6)};`;
+        outType = 'f32';
+        break;
+      }
+      case 'Expr': {
+        const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
+        const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
+        let expr = (n.expr || 'a').toString();
+        
+        console.log('Original expression:', expr);
+        
+        // Replace variables with connected inputs FIRST (before function replacements)
+        expr = expr.replace(/\ba\b/g, `(${a})`);
+        expr = expr.replace(/\bb\b/g, `(${b})`);
+        
+        // Replace time and UV references
+        expr = expr.replace(/\bu_time\b/g, 'u.time');
+        expr = expr.replace(/\buv\b/g, 'in.uv');
+        
+        // Replace constants
+        expr = expr.replace(/\bpi\b/g, '3.14159265359');
+        expr = expr.replace(/\bPI\b/g, '3.14159265359');
+        
+        console.log('Final WGSL expression:', expr);
+        
+        line = `let node_${id} = ${expr};`;
+        outType = 'f32';
+        break;
+      }
+      case 'CircleField': {
+        // Use connected inputs if available, otherwise use node parameters, finally fallback to defaults
+        const R = n.inputs?.[0] ? want(n.inputs[0],'f32') : (n.props?.radius ?? 0.25);
+        const E = n.inputs?.[1] ? want(n.inputs[1],'f32') : (n.props?.epsilon ?? 0.02);
+        line = `let node_${id} = 1.0 - smoothstep((${R}) - max(${E}, 0.0001), (${R}) + max(${E}, 0.0001), distance(in.uv, vec2<f32>(0.5, 0.5)));`;
+        outType = 'f32';
+        break;
+      }
+      
+      // Vector Math Operations (keep as vec3 for color operations)
       case 'Multiply': {
-        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
-        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(0.0)';
+        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(1.0)';
+        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(1.0)';
         line = `let node_${id} = (${A}) * (${B});`;
         outType = 'vec3';
+        console.log(`Multiply line: ${line}`);
         break;
       }
       case 'Add': {
@@ -134,179 +195,279 @@ case 'CircleField': {
         const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(0.0)';
         line = `let node_${id} = (${A}) + (${B});`;
         outType = 'vec3';
+        console.log(`Add line: ${line}`);
         break;
       }
+      case 'Subtract': {
+        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
+        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(0.0)';
+        line = `let node_${id} = (${A}) - (${B});`;
+        outType = 'vec3';
+        console.log(`Subtract line: ${line}`);
+        break;
+      }
+      case 'Divide': {
+        const A = n.inputs?.[0] ? want(n.inputs[0],'f32') : '1.0';
+        const B = n.inputs?.[1] ? want(n.inputs[1],'f32') : '1.0';
+        line = `let node_${id} = (${A}) / max((${B}), 0.0001);`;
+        outType = 'f32';
+        console.log(`Divide line: ${line}`);
+        break;
+      }
+      
+      // Single Value Math Functions
+      case 'Sin': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = sin(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Cos': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = cos(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Tan': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = tan(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Floor': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = floor(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Fract': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = fract(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Abs': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = abs(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Sqrt': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = sqrt(max(${inp}, 0.0));`;
+        outType = 'f32';
+        break;
+      }
+      case 'Pow': {
+        const base = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '1.0';
+        const exp = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '2.0';
+        line = `let node_${id} = pow(${base}, ${exp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Min': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+        line = `let node_${id} = min(${a}, ${b});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Max': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+        line = `let node_${id} = max(${a}, ${b});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Clamp': {
+        const value = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        const minVal = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+        const maxVal = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.0';
+        line = `let node_${id} = clamp(${value}, ${minVal}, ${maxVal});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Smoothstep': {
+        const edge0 = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        const edge1 = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '1.0';
+        const x = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.5';
+        line = `let node_${id} = smoothstep(${edge0}, ${edge1}, ${x});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Step': {
+        const edge = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.5';
+        const x = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+        line = `let node_${id} = step(${edge}, ${x});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Length': {
+        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+        line = `let node_${id} = length(${vec});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Distance': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
+        line = `let node_${id} = distance(${a}, ${b});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Dot': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+        line = `let node_${id} = dot(${a}, ${b});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Normalize': {
+        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+        line = `let node_${id} = normalize(${vec});`;
+        outType = 'vec3';
+        break;
+      }
+      case 'Sign': {
+        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        line = `let node_${id} = sign(${inp});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Mod': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '1.0';
+        line = `let node_${id} = ${a} - ${b} * floor(${a} / max(${b}, 0.0001));`;
+        outType = 'f32';
+        break;
+      }
+      
       case 'Saturate': {
         const v = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
         line = `let node_${id} = clamp(${v}, vec3<f32>(0.0), vec3<f32>(1.0));`;
         outType = 'vec3';
         break;
       }
-      case 'Sin': {
-        const inp = want(n.inputs[0], 'f32');
-        line = `let node_${id} = sin(${inp});`;
-        outType = 'f32';
+      
+      // Noise Nodes
+      case 'Random': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const seed = n.props?.seed ?? 1.0;
+        const scale = n.props?.scale ?? 1.0;
+        line = `let node_${id} = vec3<f32>(random(${uv} * ${scale.toFixed(3)} + vec2<f32>(${seed.toFixed(3)})));`;
+        outType = 'vec3';
         break;
       }
-      case 'Cos': {
-        const inp = want(n.inputs[0], 'f32');
-        line = `let node_${id} = cos(${inp});`;
-        outType = 'f32';
+      case 'ValueNoise': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const scale = n.props?.scale ?? 5.0;
+        const amplitude = n.props?.amplitude ?? 1.0;
+        const offset = n.props?.offset ?? 0.0;
+        const power = n.props?.power ?? 1.0;
+        line = `let node_${id} = vec3<f32>(clamp(pow(valueNoise(${uv} * ${scale.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}, ${power.toFixed(3)}), 0.0, 1.0));`;
+        outType = 'vec3';
         break;
-}
+      }
+      case 'FBMNoise': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const scale = n.props?.scale ?? 3.0;
+        const octaves = n.props?.octaves ?? 4;
+        const persistence = n.props?.persistence ?? 0.5;
+        const lacunarity = n.props?.lacunarity ?? 2.0;
+        const amplitude = n.props?.amplitude ?? 1.0;
+        const offset = n.props?.offset ?? 0.0;
+        const gain = n.props?.gain ?? 0.5;
+        const warp = n.props?.warp ?? 0.0;
+        let uvExpr = `${uv} * ${scale.toFixed(3)}`;
+        if (warp > 0.001) {
+          uvExpr = `${uvExpr} + vec2<f32>(valueNoise(${uv} * ${(scale * 2.0).toFixed(3)}) * ${warp.toFixed(3)})`;
+        }
+        line = `let node_${id} = vec3<f32>(clamp((fbm(${uvExpr}, ${octaves}, ${persistence.toFixed(3)}, ${lacunarity.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}) * ${gain.toFixed(3)}, 0.0, 1.0));`;
+        outType = 'vec3';
+        break;
+      }
+      case 'SimplexNoise': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const scale = n.props?.scale ?? 4.0;
+        const amplitude = n.props?.amplitude ?? 1.0;
+        const offset = n.props?.offset ?? 0.0;
+        const ridge = n.props?.ridge ?? false;
+        const turbulence = n.props?.turbulence ?? false;
+        let noiseExpr = `simplexNoise(${uv} * ${scale.toFixed(3)})`;
+        if (ridge) {
+          noiseExpr = `abs(${noiseExpr})`;
+        }
+        if (turbulence) {
+          noiseExpr = `abs(${noiseExpr})`;
+        }
+        line = `let node_${id} = vec3<f32>(clamp(${noiseExpr} * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}, 0.0, 1.0));`;
+        outType = 'vec3';
+        break;
+      }
+      case 'VoronoiNoise': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const scale = n.props?.scale ?? 8.0;
+        const randomness = n.props?.randomness ?? 1.0;
+        const smoothness = n.props?.smoothness ?? 0.0;
+        const outputType = n.props?.outputType ?? 0;
+        let voronoiExpr = `voronoi(${uv} * ${scale.toFixed(3)}, ${randomness.toFixed(3)})`;
+        if (outputType === 1) {
+          voronoiExpr = `${voronoiExpr}.y`;
+        } else {
+          voronoiExpr = `${voronoiExpr}.x`;
+        }
+        if (smoothness > 0.001) {
+          voronoiExpr = `smoothstep(0.0, ${smoothness.toFixed(3)}, ${voronoiExpr})`;
+        }
+        line = `let node_${id} = vec3<f32>(clamp(${voronoiExpr}, 0.0, 1.0));`;
+        outType = 'vec3';
+        break;
+      }
+      case 'RidgedNoise': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const scale = n.props?.scale ?? 4.0;
+        const octaves = n.props?.octaves ?? 6;
+        const lacunarity = n.props?.lacunarity ?? 2.0;
+        const gain = n.props?.gain ?? 0.5;
+        const amplitude = n.props?.amplitude ?? 1.0;
+        const offset = n.props?.offset ?? 1.0;
+        const threshold = n.props?.threshold ?? 0.0;
+        line = `let node_${id} = vec3<f32>(clamp(ridgedNoise(${uv} * ${scale.toFixed(3)}, ${octaves}, ${lacunarity.toFixed(3)}, ${gain.toFixed(3)}, ${offset.toFixed(3)}, ${threshold.toFixed(3)}) * ${amplitude.toFixed(3)}, 0.0, 1.0));`;
+        outType = 'vec3';
+        break;
+      }
+      case 'WarpNoise': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const scale = n.props?.scale ?? 3.0;
+        const warpScale = n.props?.warpScale ?? 2.0;
+        const warpStrength = n.props?.warpStrength ?? 0.1;
+        const octaves = n.props?.octaves ?? 3;
+        const amplitude = n.props?.amplitude ?? 1.0;
+        line = `let node_${id} = vec3<f32>(clamp(warpedNoise(${uv}, ${scale.toFixed(3)}, ${warpScale.toFixed(3)}, ${warpStrength.toFixed(3)}, ${octaves}) * ${amplitude.toFixed(3)}, 0.0, 1.0));`;
+        outType = 'vec3';
+        break;
+      }
+
       case 'OutputFinal': {
         const c = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0,0.0,0.0)';
         line = `finalColor = ${c};`;
         outType = 'vec3';
+        console.log(`OutputFinal line: ${line}`);
         break;
       }
       default: {
+        console.log(`UNKNOWN NODE TYPE: "${n.kind}"`);
         line = `let node_${id} = vec3<f32>(0.0);`;
         outType = 'vec3';
         break;
       }
+    }
 
-// Add these complete noise cases to your glslBuilder.js switch statement:
-
-// Enhanced noise cases with more parameters for glslBuilder.js
-
-case 'Random': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const seed = n.props?.seed ?? 1.0;
-  const scale = n.props?.scale ?? 1.0;
-  line = `let node_${id} = random(${uv} * ${scale.toFixed(3)} + vec2<f32>(${seed.toFixed(3)}));`;
-  outType = 'vec3';
-  break;
-}
-
-case 'ValueNoise': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const scale = n.props?.scale ?? 5.0;
-  const amplitude = n.props?.amplitude ?? 1.0;
-  const offset = n.props?.offset ?? 0.0;
-  const power = n.props?.power ?? 1.0;
-  line = `let node_${id} = vec3<f32>(clamp(pow(valueNoise(${uv} * ${scale.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}, ${power.toFixed(3)}), 0.0, 1.0));`;
-  outType = 'vec3';
-  break;
-}
-
-case 'FBMNoise': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const scale = n.props?.scale ?? 3.0;
-  const octaves = n.props?.octaves ?? 4;
-  const persistence = n.props?.persistence ?? 0.5;
-  const lacunarity = n.props?.lacunarity ?? 2.0;
-  const amplitude = n.props?.amplitude ?? 1.0;
-  const offset = n.props?.offset ?? 0.0;
-  const gain = n.props?.gain ?? 0.5;
-  const warp = n.props?.warp ?? 0.0;
-  
-  let uvExpr = `${uv} * ${scale.toFixed(3)}`;
-  if (warp > 0.001) {
-    uvExpr = `${uvExpr} + vec2<f32>(valueNoise(${uv} * ${(scale * 2.0).toFixed(3)}) * ${warp.toFixed(3)})`;
-  }
-  
-  line = `let node_${id} = (fbm(${uvExpr}, ${octaves}, ${persistence.toFixed(3)}, ${lacunarity.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}) * ${gain.toFixed(3)};`;
-  outType = 'vec3';
-  break;
-}
-
-case 'SimplexNoise': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const scale = n.props?.scale ?? 4.0;
-  const amplitude = n.props?.amplitude ?? 1.0;
-  const offset = n.props?.offset ?? 0.0;
-  const ridge = n.props?.ridge ?? false;
-  const turbulence = n.props?.turbulence ?? false;
-  
-  let noiseExpr = `simplexNoise(${uv} * ${scale.toFixed(3)})`;
-  
-  if (ridge) {
-    noiseExpr = `abs(${noiseExpr})`;
-  }
-  if (turbulence) {
-    noiseExpr = `abs(${noiseExpr})`;
-  }
-  
-  line = `let node_${id} = ${noiseExpr} * ${amplitude.toFixed(3)} + ${offset.toFixed(3)};`;
-  outType = 'vec3';
-  break;
-}
-
-case 'VoronoiNoise': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const scale = n.props?.scale ?? 8.0;
-  const randomness = n.props?.randomness ?? 1.0;
-  const minkowskiP = n.props?.minkowskiP ?? 2.0;
-  const smoothness = n.props?.smoothness ?? 0.0;
-  const cellType = n.props?.cellType ?? 0;
-  const outputType = n.props?.outputType ?? 0;
-  
-  // Basic voronoi call
-  let voronoiExpr = `voronoi(${uv} * ${scale.toFixed(3)}, ${randomness.toFixed(3)})`;
-  
-  // Output selection
-  if (outputType === 1) {
-    voronoiExpr = `${voronoiExpr}.y`; // Cell ID
-  } else {
-    voronoiExpr = `${voronoiExpr}.x`; // Distance
-  }
-  
-  // Smoothness
-  if (smoothness > 0.001) {
-    voronoiExpr = `smoothstep(0.0, ${smoothness.toFixed(3)}, ${voronoiExpr})`;
-  }
-  
-  line = `let node_${id} = ${voronoiExpr};`;
-  outType = 'vec3';
-  break;
-}
-
-case 'RidgedNoise': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const scale = n.props?.scale ?? 4.0;
-  const octaves = n.props?.octaves ?? 6;
-  const lacunarity = n.props?.lacunarity ?? 2.0;
-  const gain = n.props?.gain ?? 0.5;
-  const amplitude = n.props?.amplitude ?? 1.0;
-  const offset = n.props?.offset ?? 1.0;
-  const threshold = n.props?.threshold ?? 0.0;
-  
-  line = `let node_${id} = ridgedNoise(${uv} * ${scale.toFixed(3)}, ${octaves}, ${lacunarity.toFixed(3)}, ${gain.toFixed(3)}, ${offset.toFixed(3)}, ${threshold.toFixed(3)}) * ${amplitude.toFixed(3)};`;
-  outType = 'vec3';
-  break;
-}
-
-case 'WarpNoise': {
-  const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-  const scale = n.props?.scale ?? 3.0;
-  const warpScale = n.props?.warpScale ?? 2.0;
-  const warpStrength = n.props?.warpStrength ?? 0.1;
-  const octaves = n.props?.octaves ?? 3;
-  const amplitude = n.props?.amplitude ?? 1.0;
-  
-  line = `let node_${id} = warpedNoise(${uv}, ${scale.toFixed(3)}, ${warpScale.toFixed(3)}, ${warpStrength.toFixed(3)}, ${octaves}) * ${amplitude.toFixed(3)};`;
-  outType = 'vec3';
-  break;
-}
-
-}
-
-
-
-
-
-
-
-
-
-
+    console.log(`Generated line for ${n.kind}: ${line}`);
     lines.push(line);
     
     // Save expression/type for downstream
-    if(n.kind === 'OutputFinal'){
-      // Output doesn't produce new value; skip
-    }else{
+    if(n.kind !== 'OutputFinal'){
       exprs.set(n.id, `node_${id}`);
       types.set(n.id, outType);
     }
@@ -407,9 +568,6 @@ fn voronoi(st: vec2<f32>, randomness: f32) -> vec2<f32> {
   return vec2<f32>(minDist, minPoint.x);
 }
 
-// In your glslBuilder.js, around line 208, after the existing voronoi function
-// and BEFORE the @fragment line, add:
-
 fn ridgedNoise(st: vec2<f32>, octaves: i32, lacunarity: f32, gain: f32, offset: f32, threshold: f32) -> f32 {
   var value = 0.0;
   var amplitude = 1.0;
@@ -446,13 +604,12 @@ fn warpedNoise(st: vec2<f32>, scale: f32, warpScale: f32, warpStrength: f32, oct
   return fbm(warpedPos * scale, octaves, 0.5, 2.0);
 }
 
-
-
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   var finalColor: vec3<f32> = vec3<f32>(0.0);
   ${lines.join('\n  ')}
-  return vec4<f32>(finalColor, 1.0);
+  let _keep_uniform = u.time * 0.0;
+  return vec4<f32>(finalColor + vec3<f32>(_keep_uniform), 1.0);
 }
 `;
   return code;

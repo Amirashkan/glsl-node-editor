@@ -255,30 +255,122 @@ WarpNoise: {
     pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'vec3' }],
     params: []
   },
-// Basic Math
+//  Math
+// Add these math nodes to your NodeDefs.js
+
+// Basic Math Functions
 Sin: { 
   label: 'Sin', cat: 'Math', inputs: 1, 
-  pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'f32' }], 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
   params: [] 
 },
 Cos: { 
   label: 'Cos', cat: 'Math', inputs: 1, 
-  pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'f32' }], 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Tan: { 
+  label: 'Tan', cat: 'Math', inputs: 1, 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
   params: [] 
 },
 Floor: { 
   label: 'Floor', cat: 'Math', inputs: 1, 
-  pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'f32' }], 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
   params: [] 
 },
 Fract: { 
   label: 'Fract', cat: 'Math', inputs: 1, 
-  pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'f32' }], 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
   params: [] 
 },
 Abs: { 
   label: 'Abs', cat: 'Math', inputs: 1, 
-  pinsIn: ['In'], pinsOut: [{ label: 'v', type: 'f32' }], 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Sqrt: { 
+  label: 'Sqrt', cat: 'Math', inputs: 1, 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Pow: { 
+  label: 'Power', cat: 'Math', inputs: 2, 
+  pinsIn: ['Base', 'Exp'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Min: { 
+  label: 'Min', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Max: { 
+  label: 'Max', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Clamp: { 
+  label: 'Clamp', cat: 'Math', inputs: 3, 
+  pinsIn: ['Value', 'Min', 'Max'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Smoothstep: { 
+  label: 'Smoothstep', cat: 'Math', inputs: 3, 
+  pinsIn: ['Edge0', 'Edge1', 'X'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Step: { 
+  label: 'Step', cat: 'Math', inputs: 2, 
+  pinsIn: ['Edge', 'X'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Subtract: { 
+  label: 'Subtract', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'out', type: 'vec3' }], 
+  params: [] 
+},
+Divide: { 
+  label: 'Divide', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'out', type: 'vec3' }], 
+  params: [] 
+},
+
+// Vector Math
+Length: { 
+  label: 'Length', cat: 'Math', inputs: 1, 
+  pinsIn: ['Vec'], pinsOut: [{ label: 'len', type: 'f32' }], 
+  params: [] 
+},
+Distance: { 
+  label: 'Distance', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'dist', type: 'f32' }], 
+  params: [] 
+},
+Dot: { 
+  label: 'Dot', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'dot', type: 'f32' }], 
+  params: [] 
+},
+Normalize: { 
+  label: 'Normalize', cat: 'Math', inputs: 1, 
+  pinsIn: ['Vec'], pinsOut: [{ label: 'norm', type: 'vec3' }], 
+  params: [] 
+},
+
+// Advanced Math
+Mix: { 
+  label: 'Mix', cat: 'Math', inputs: 3, 
+  pinsIn: ['A', 'B', 'T'], pinsOut: [{ label: 'out', type: 'vec3' }], 
+  params: [] 
+},
+Sign: { 
+  label: 'Sign', cat: 'Math', inputs: 1, 
+  pinsIn: ['In'], pinsOut: [{ label: 'out', type: 'f32' }], 
+  params: [] 
+},
+Mod: { 
+  label: 'Mod', cat: 'Math', inputs: 2, 
+  pinsIn: ['A', 'B'], pinsOut: [{ label: 'out', type: 'f32' }], 
   params: [] 
 },
 

@@ -8,99 +8,90 @@ export class PreviewSystem {
   }
 
   // Generate preview for a single node
-  generateNodePreview(node) {
-      console.log('Generating preview for:', node.kind, node.kind.toLowerCase()); // ADD THIS LINE
+generateNodePreview(node) {
+  console.log('Generating preview for:', node.kind, node.kind.toLowerCase()); 
 
-    if (!this.editor.isPreviewEnabled) {
-      node.__thumb = null;
-      return;
-    }
-
-    try {
-      const canvas = this.getCanvas(node.id);
-      const ctx = canvas.getContext('2d');
-      
-      // Clear
-      ctx.fillStyle = '#141414';
-      ctx.fillRect(0, 0, this.size, this.size);
-      
-      // Route to specific renderer
-      switch (node.kind.toLowerCase()) {
-        case 'constfloat':
-        case 'float':
-          this.renderFloat(ctx, node);
-          break;
-        case 'multiply':
-          this.renderMath(ctx, node, '×', '#f59e0b');
-          break;
-        case 'add':
-          this.renderMath(ctx, node, '+', '#60a5fa');
-          break;
-        case 'subtract':
-          this.renderMath(ctx, node, '−', '#f87171');
-          break;
-        case 'divide':
-          this.renderMath(ctx, node, '÷', '#a78bfa');
-          break;
-        case 'circle':
-        case 'circlefield':
-          this.renderCircle(ctx, node);
-          break;
-        case 'uv':
-          this.renderUV(ctx, node);
-          break;
-        case 'time':
-          this.renderTime(ctx, node);
-          break;
-        case 'expr':
-          this.renderExpression(ctx, node);
-          break;
-        case 'saturate':
-          this.renderSaturate(ctx, node);
-          break;
-        case 'output':
-        case 'outputfinal':
-          this.renderOutput(ctx, node);
-          break;
-        case 'random':
-          this.renderRandom(ctx, node);
-          break;
-        case 'valuenoise':
-          this.renderValueNoise(ctx, node);
-          break;
-        case 'fbmnoise':
-          this.renderFBMNoise(ctx, node);
-          break;
-        case 'simplexnoise':
-          this.renderSimplexNoise(ctx, node);
-          break;
-        case 'voronoinoise':
-          this.renderVoronoiNoise(ctx, node);
-          break;
-
-
-
-
-
-
-
-
-
-
-
-        default:
-          this.renderGeneric(ctx, node);
-      }
-      
-      node.__thumb = canvas;
-      
-    } catch (error) {
-      console.warn('Preview failed:', node.kind, error);
-      this.renderError(ctx, node);
-      node.__thumb = canvas;
-    }
+  if (!this.editor.isPreviewEnabled) {
+    node.__thumb = null;
+    return;
   }
-// Add these methods to your PreviewSystem class
+
+  try {
+    const canvas = this.getCanvas(node.id);
+    const ctx = canvas.getContext('2d');
+    
+    // Clear
+    ctx.fillStyle = '#141414';
+    ctx.fillRect(0, 0, this.size, this.size);
+    
+    // Route to specific renderer
+    switch (node.kind.toLowerCase()) {
+      case 'constfloat':
+      case 'float':
+        this.renderFloat(ctx, node);
+        break;
+      case 'multiply':
+        this.renderMath(ctx, node, '×', '#f59e0b');
+        break;
+      case 'add':
+        this.renderMath(ctx, node, '+', '#60a5fa');
+        break;
+      case 'subtract':
+        this.renderMath(ctx, node, '−', '#f87171');
+        break;
+      case 'divide':
+        this.renderMath(ctx, node, '÷', '#a78bfa');
+        break;
+      case 'circle':
+      case 'circlefield':
+        this.renderCircle(ctx, node);
+        break;
+      case 'uv':
+        this.renderUV(ctx, node);
+        break;
+      case 'time':
+        this.renderTime(ctx, node);
+        break;
+      case 'expr':
+        this.renderExpression(ctx, node);
+        break;
+      case 'saturate':
+        this.renderSaturate(ctx, node);
+        break;
+      case 'output':
+      case 'outputfinal':
+        this.renderOutput(ctx, node);
+        break;
+      case 'random':
+        this.renderRandom(ctx, node);
+        break;
+      case 'valuenoise':
+        this.renderValueNoise(ctx, node);
+        break;
+      case 'fbmnoise':
+        this.renderFBMNoise(ctx, node);
+        break;
+      case 'simplexnoise':
+        this.renderSimplexNoise(ctx, node);
+        break;
+      case 'voronoinoise':
+        this.renderVoronoiNoise(ctx, node);
+        break;
+      default:
+        this.renderGeneric(ctx, node);
+    }
+    
+    node.__thumb = canvas;
+    
+  } catch (error) {
+    console.warn('Preview failed:', node.kind, error);
+    // Fix: Get canvas and ctx for error rendering
+    const canvas = this.getCanvas(node.id);
+    const ctx = canvas.getContext('2d');
+    this.renderError(ctx, node);
+    node.__thumb = canvas;
+  }
+}
 
 renderRandom(ctx, node) {
   // Static noise pattern
@@ -292,83 +283,96 @@ pseudoRandom(x, y) {
   }
 
   // Render float value
-  renderFloat(ctx, node) {
-    const value = this.getParameter(node, 'value') || 0;
-    
-    // Background color based on value
-    const intensity = Math.min(0.8, Math.abs(value) / 10);
-    const hue = value >= 0 ? 120 : 0;
-    
-    ctx.fillStyle = `hsl(${hue}, 60%, ${10 + intensity * 30}%)`;
-    ctx.fillRect(0, 0, this.size, this.size);
-    
-    // Value text
-    ctx.fillStyle = `hsl(${hue}, 80%, 80%)`;
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    const text = Math.abs(value) < 0.01 ? 
-      value.toExponential(1) : 
-      value.toFixed(2);
-    
-    ctx.fillText(text, this.size/2, this.size/2);
-    
-    // Grid
-    ctx.strokeStyle = `hsl(${hue}, 40%, 40%)`;
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < this.size; i += 8) {
-      ctx.beginPath();
-      ctx.moveTo(i, 0); ctx.lineTo(i, this.size);
-      ctx.moveTo(0, i); ctx.lineTo(this.size, i);
-      ctx.stroke();
-    }
+renderFloat(ctx, node) {
+  const value = this.getParameter(node, 'value') || 0;
+  
+  // Ensure value is a number
+  const numValue = typeof value === 'number' ? value : parseFloat(value) || 0;
+  
+  // Background color based on value
+  const intensity = Math.min(0.8, Math.abs(numValue) / 10);
+  const hue = numValue >= 0 ? 120 : 0;
+  
+  ctx.fillStyle = `hsl(${hue}, 60%, ${10 + intensity * 30}%)`;
+  ctx.fillRect(0, 0, this.size, this.size);
+  
+  // Value text
+  ctx.fillStyle = `hsl(${hue}, 80%, 80%)`;
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  const text = Math.abs(numValue) < 0.01 ? 
+    numValue.toExponential(1) : 
+    numValue.toFixed(2);
+  
+  ctx.fillText(text, this.size/2, this.size/2);
+  
+  // Grid
+  ctx.strokeStyle = `hsl(${hue}, 40%, 40%)`;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < this.size; i += 8) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0); ctx.lineTo(i, this.size);
+    ctx.moveTo(0, i); ctx.lineTo(this.size, i);
+    ctx.stroke();
   }
-
+}
   // Render math operations
-  renderMath(ctx, node, symbol, color) {
-    // Get actual input values
-    const inputs = this.getConnectedInputs(node);
-    const a = inputs.a || 1;
-    const b = inputs.b || 1;
-    
-    // Calculate result
-    let result;
-    switch (symbol) {
-      case '×': result = a * b; break;
-      case '+': result = a + b; break;
-      case '−': result = a - b; break;
-      case '÷': result = b !== 0 ? a / b : 0; break;
-      default: result = a + b;
-    }
-    
-    // Background
-    ctx.fillStyle = color + '20';
-    ctx.fillRect(0, 0, this.size, this.size);
-    
-    // Symbol
-    ctx.fillStyle = color;
-    ctx.font = 'bold 16px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(symbol, this.size/2, this.size/2 - 4);
-    
-    // Result
-    ctx.font = '8px monospace';
-    ctx.fillText(result.toFixed(2), this.size/2, this.size/2 + 12);
-    
-    // Inputs
-    ctx.font = '6px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText(`A:${a.toFixed(1)}`, 2, 10);
-    ctx.fillText(`B:${b.toFixed(1)}`, 2, 18);
+
+renderMath(ctx, node, symbol, color) {
+  // Get actual computed value for this node
+  const computedResult = this.computeNodeValue(node);
+  
+  // Get actual input values - handle different input pin naming conventions
+  const inputs = this.getConnectedInputs(node);
+  console.log(`${node.kind} inputs:`, inputs); 
+  
+  let a, b;
+  
+  switch (node.kind.toLowerCase()) {
+    case 'divide':
+    case 'subtract':
+      a = inputs.a !== undefined ? inputs.a : 1;
+      b = inputs.b !== undefined ? inputs.b : 1;
+      break;
+    case 'multiply':
+    case 'add':
+      a = inputs.a !== undefined ? inputs.a : 1;
+      b = inputs.b !== undefined ? inputs.b : 1;
+      break;
+    default:
+      a = inputs.a !== undefined ? inputs.a : 1;
+      b = inputs.b !== undefined ? inputs.b : 1;
   }
-
-  // Render circle field
-
-
-// Replace the renderCircle function in PreviewSystem.js with this:
-
-// Replace the renderCircle function in PreviewSystem.js with this:
+  
+  console.log(`${node.kind} final values - a:${a}, b:${b}, result:${computedResult}`);
+  
+  // Background
+  ctx.fillStyle = color + '20';
+  ctx.fillRect(0, 0, this.size, this.size);
+  
+  // Symbol
+  ctx.fillStyle = color;
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(symbol, this.size/2, this.size/2 - 4);
+  
+  // Result - use the computed result, not a manual calculation
+  ctx.font = '8px monospace';
+  const resultText = Math.abs(computedResult) < 0.01 ? 
+    computedResult.toExponential(1) : 
+    computedResult.toFixed(2);
+  ctx.fillText(resultText, this.size/2, this.size/2 + 12);
+  
+  // Inputs
+  ctx.font = '6px monospace';
+  ctx.textAlign = 'left';
+  const aText = Math.abs(a) < 0.01 ? a.toExponential(1) : a.toFixed(2);
+  const bText = Math.abs(b) < 0.01 ? b.toExponential(1) : b.toFixed(2);
+  ctx.fillText(`A:${aText}`, 2, 10);
+  ctx.fillText(`B:${bText}`, 2, 18);
+}
 
 // Replace the renderCircle function in PreviewSystem.js with this:
 
@@ -892,46 +896,159 @@ evaluateExpression(expr, vars) {
   return node[name] || node.props?.[name] || 0;
   }
 
-  getConnectedInputs(node) {
-    const inputs = {};
-    
-    if (!this.editor.graph?.connections) return inputs;
-    
-    // Find connections to this node
-    for (const conn of this.editor.graph.connections) {
-      if (conn.to.nodeId === node.id) {
-        const sourceNode = this.editor.graph.nodes.find(n => n.id === conn.from.nodeId);
-        if (sourceNode) {
-          const value = this.computeNodeValue(sourceNode);
-          
-          // Map pin index to input name
-          const pinNames = ['a', 'b', 'input', 'x', 'y', 'z'];
-          const inputName = pinNames[conn.to.pin] || `input${conn.to.pin}`;
-          inputs[inputName] = value;
-        }
-      }
-    }
-    
-    return inputs;
+// Replace both computeNodeValue and getConnectedInputs methods in PreviewSystem.js:
+
+computeNodeValue(node, visited = new Set()) {
+  // Prevent infinite recursion
+  if (visited.has(node.id)) {
+    console.warn(`Circular dependency detected for node ${node.kind} (${node.id})`);
+    return 0;
   }
+  visited.add(node.id);
 
-
-computeNodeValue(node) {
+  let result;
+  
   switch (node.kind.toLowerCase()) {
     case 'constfloat':
     case 'float':
-      return this.getParameter(node, 'value') || 0;
-      case 'time':
-        return (Date.now() / 1000) % 1;
-      case 'uv':
-        return 0.5; // Return scalar for math operations
-      case 'circle':
-      case 'circlefield':
-        return this.getParameter(node, 'radius') || 0.5;
-      default:
-        return 0;
+      result = this.getParameter(node, 'value') || 0;
+      console.log(`computeNodeValue(${node.kind}[${node.id}]): ${result} (from parameter)`);
+      break;
+      
+    case 'time':
+      result = (Date.now() / 1000) % 1;
+      console.log(`computeNodeValue(${node.kind}[${node.id}]): ${result} (time)`);
+      break;
+      
+    case 'uv':
+      result = 0.5;
+      console.log(`computeNodeValue(${node.kind}[${node.id}]): ${result} (uv)`);
+      break;
+      
+    case 'circle':
+    case 'circlefield':
+      result = this.getParameter(node, 'radius') || 0.5;
+      console.log(`computeNodeValue(${node.kind}[${node.id}]): ${result} (circle)`);
+      break;
+      
+    case 'multiply': {
+      const inputs = this.getConnectedInputs(node, visited);
+      const a = inputs.a !== undefined ? inputs.a : 1;
+      const b = inputs.b !== undefined ? inputs.b : 1;
+      result = a * b;
+      console.log(`computeNodeValue MULTIPLY[${node.id}]: ${a} × ${b} = ${result}`);
+      break;
+    }
+    
+    case 'add': {
+      const inputs = this.getConnectedInputs(node, visited);
+      const a = inputs.a !== undefined ? inputs.a : 0;
+      const b = inputs.b !== undefined ? inputs.b : 0;
+      result = a + b;
+      console.log(`computeNodeValue ADD[${node.id}]: ${a} + ${b} = ${result}`);
+      break;
+    }
+    
+    case 'divide': {
+      const inputs = this.getConnectedInputs(node, visited);
+      const a = inputs.a !== undefined ? inputs.a : 1;
+      const b = inputs.b !== undefined ? inputs.b : 1;
+      result = b !== 0 ? a / b : 0;
+      console.log(`computeNodeValue DIVIDE[${node.id}]: ${a} ÷ ${b} = ${result}`);
+      break;
+    }
+    
+    case 'subtract': {
+      const inputs = this.getConnectedInputs(node, visited);
+      const a = inputs.a !== undefined ? inputs.a : 0;
+      const b = inputs.b !== undefined ? inputs.b : 0;
+      result = a - b;
+      console.log(`computeNodeValue SUBTRACT[${node.id}]: ${a} - ${b} = ${result}`);
+      break;
+    }
+    
+    // Keep all your other cases here...
+    case 'expr': {
+      const inputs = this.getConnectedInputs(node, visited);
+      const expr = this.getParameter(node, 'expr') || node.expr || 'a';
+      const a = inputs.a || 0;
+      const b = inputs.b || 0;
+      const variables = {
+        a: a,
+        b: b,
+        t: (Date.now() / 1000) % (Math.PI * 2),
+        u_time: (Date.now() / 1000),
+        pi: Math.PI,
+        PI: Math.PI
+      };
+      result = this.evaluateExpression(expr, variables);
+      console.log(`computeNodeValue EXPR[${node.id}]: ${result}`);
+      break;
+    }
+    
+    case 'saturate': {
+      const inputs = this.getConnectedInputs(node, visited);
+      const input = inputs.input || inputs.a || 0;
+      result = Math.max(0, Math.min(1, input));
+      console.log(`computeNodeValue SATURATE[${node.id}]: ${result}`);
+      break;
+    }
+    
+    default:
+      result = 0;
+      console.log(`computeNodeValue UNKNOWN[${node.id}] ${node.kind}: ${result}`);
+  }
+  
+  visited.delete(node.id); // Remove from visited set when done
+  return result;
+}
+
+getConnectedInputs(node, visited = new Set()) {
+  const inputs = {};
+  
+  if (!this.editor.graph?.connections) return inputs;
+  
+  console.log(`\n=== Getting inputs for ${node.kind} (${node.id}) ===`);
+  
+  // Find connections to this node
+  for (const conn of this.editor.graph.connections) {
+    if (conn.to.nodeId === node.id) {
+      const sourceNode = this.editor.graph.nodes.find(n => n.id === conn.from.nodeId);
+      if (sourceNode) {
+        // Pass the visited set to prevent circular dependencies
+        const value = this.computeNodeValue(sourceNode, visited);
+        const pinIndex = conn.to.pin;
+        
+        console.log(`Connection: ${sourceNode.kind}[${sourceNode.id}](${value}) -> ${node.kind}.pin[${pinIndex}]`);
+        
+        // Map pin index directly to expected input names
+        let inputName;
+        
+        if (pinIndex === 0) {
+          inputName = 'a';
+        } else if (pinIndex === 1) {
+          inputName = 'b'; 
+        } else if (pinIndex === 2) {
+          inputName = 'c';
+        } else {
+          inputName = `input${pinIndex}`;
+        }
+        
+        inputs[inputName] = value;
+        console.log(`  Mapped to: ${inputName} = ${value}`);
+        
+        // Add compatibility aliases
+        if (pinIndex === 0) {
+          inputs.input = value;
+          inputs.value = value;
+        }
+      }
     }
   }
+  
+  console.log(`Final inputs for ${node.kind}[${node.id}]:`, inputs);
+  return inputs;
+}
 
   evaluateExpression(expr, vars) {
     // Simple expression evaluator
