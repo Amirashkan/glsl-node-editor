@@ -152,7 +152,96 @@ export class PreviewComputer {
           result = this._clamp01(v);
           break;
         }
+case 'Dot': {
+  const a = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [1, 0, 0];
+  const b = node.inputs?.[1] ? this._toVec3(values.get(node.inputs[1])) : [0, 1, 0];
+  result = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  break;
+}
 
+case 'Cross': {
+  const a = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [1, 0, 0];
+  const b = node.inputs?.[1] ? this._toVec3(values.get(node.inputs[1])) : [0, 1, 0];
+  result = [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+  break;
+}
+
+case 'Normalize': {
+  const vec = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [1, 0, 0];
+  const length = Math.sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+  if (length > 1e-6) {
+    result = [vec[0] / length, vec[1] / length, vec[2] / length];
+  } else {
+    result = [0, 0, 0];
+  }
+  break;
+}
+
+case 'Length': {
+  const vec = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [0, 0, 0];
+  result = Math.sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
+  break;
+}
+
+case 'Distance': {
+  const a = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [0, 0, 0];
+  const b = node.inputs?.[1] ? this._toVec3(values.get(node.inputs[1])) : [0, 0, 0];
+  const diff = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  result = Math.sqrt(diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]);
+  break;
+}
+
+case 'Reflect': {
+  const incident = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [1, -1, 0];
+  const normal = node.inputs?.[1] ? this._toVec3(values.get(node.inputs[1])) : [0, 1, 0];
+  
+  // Normalize the normal vector
+  const nLength = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+  const n = nLength > 1e-6 ? [normal[0] / nLength, normal[1] / nLength, normal[2] / nLength] : [0, 1, 0];
+  
+  // Calculate reflection: R = I - 2 * dot(N, I) * N
+  const dotNI = n[0] * incident[0] + n[1] * incident[1] + n[2] * incident[2];
+  result = [
+    incident[0] - 2 * dotNI * n[0],
+    incident[1] - 2 * dotNI * n[1],
+    incident[2] - 2 * dotNI * n[2]
+  ];
+  break;
+}
+
+case 'Refract': {
+  const incident = node.inputs?.[0] ? this._toVec3(values.get(node.inputs[0])) : [1, -1, 0];
+  const normal = node.inputs?.[1] ? this._toVec3(values.get(node.inputs[1])) : [0, 1, 0];
+  const eta = node.inputs?.[2] ? this._toF32(values.get(node.inputs[2])) : 1.5;
+  
+  // Normalize vectors
+  const nLength = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+  const n = nLength > 1e-6 ? [normal[0] / nLength, normal[1] / nLength, normal[2] / nLength] : [0, 1, 0];
+  
+  const iLength = Math.sqrt(incident[0] * incident[0] + incident[1] * incident[1] + incident[2] * incident[2]);
+  const i = iLength > 1e-6 ? [incident[0] / iLength, incident[1] / iLength, incident[2] / iLength] : [0, 0, 0];
+  
+  // Calculate refraction
+  const dotNI = n[0] * i[0] + n[1] * i[1] + n[2] * i[2];
+  const k = 1.0 - eta * eta * (1.0 - dotNI * dotNI);
+  
+  if (k < 0.0) {
+    // Total internal reflection
+    result = [0, 0, 0];
+  } else {
+    const sqrtK = Math.sqrt(k);
+    result = [
+      eta * i[0] - (eta * dotNI + sqrtK) * n[0],
+      eta * i[1] - (eta * dotNI + sqrtK) * n[1],
+      eta * i[2] - (eta * dotNI + sqrtK) * n[2]
+    ];
+  }
+  break;
+}
         case 'OutputFinal': {
           const c = node.inputs?.[0] ? values.get(node.inputs[0]) : [0, 0, 0];
           result = this._toVec3(c);

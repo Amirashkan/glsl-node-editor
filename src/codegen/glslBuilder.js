@@ -348,7 +348,60 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         outType = 'vec3';
         break;
       }
-      
+      case 'Dot': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+  line = `let node_${id} = dot(${a}, ${b});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Cross': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+  line = `let node_${id} = cross(${a}, ${b});`;
+  outType = 'vec3';
+  break;
+}
+
+case 'Normalize': {
+  const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+  line = `let node_${id} = normalize(${vec});`;
+  outType = 'vec3';
+  break;
+}
+
+case 'Length': {
+  const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+  line = `let node_${id} = length(${vec});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Distance': {
+  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
+  line = `let node_${id} = distance(${a}, ${b});`;
+  outType = 'f32';
+  break;
+}
+
+case 'Reflect': {
+  const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
+  const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+  line = `let node_${id} = reflect(${incident}, ${normal});`;
+  outType = 'vec3';
+  break;
+}
+
+case 'Refract': {
+  const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
+  const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+  const eta = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.5';
+  line = `let node_${id} = refract(${incident}, ${normal}, ${eta});`;
+  outType = 'vec3';
+  break;
+}
       // Noise Nodes
       case 'Random': {
         const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
