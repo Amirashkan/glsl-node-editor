@@ -1,5 +1,4 @@
-// src/codegen/glslBuilder.js
-// WGSL shader generation with proper syntax
+// src/codegen/glslBuilder.js - Fixed WGSL builder with duplicates removed
 
 function topoOrder(graph){
   const nodes = graph.nodes || [];
@@ -147,6 +146,16 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         outType = 'f32';
         break;
       }
+case 'ConstVec3': {
+  // Read from props, NOT coordinates
+  const x = parseFloat(n.props?.x) || 0;
+  const y = parseFloat(n.props?.y) || 0;
+  const z = parseFloat(n.props?.z) || 0;
+  
+  line = `let node_${id} = vec3<f32>(${x.toFixed(6)}, ${y.toFixed(6)}, ${z.toFixed(6)});`;
+  outType = 'vec3';
+  break;
+}
       case 'Expr': {
         const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
         const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
@@ -207,10 +216,10 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         break;
       }
       case 'Divide': {
-        const A = n.inputs?.[0] ? want(n.inputs[0],'f32') : '1.0';
-        const B = n.inputs?.[1] ? want(n.inputs[1],'f32') : '1.0';
-        line = `let node_${id} = (${A}) / max((${B}), 0.0001);`;
-        outType = 'f32';
+        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(1.0)';
+        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(1.0)';
+        line = `let node_${id} = (${A}) / max((${B}), vec3<f32>(0.0001));`;
+        outType = 'vec3';
         console.log(`Divide line: ${line}`);
         break;
       }
@@ -302,29 +311,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         outType = 'f32';
         break;
       }
-      case 'Length': {
-        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = length(${vec});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Distance': {
+      case 'Mix': {
         const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = distance(${a}, ${b});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Dot': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-        line = `let node_${id} = dot(${a}, ${b});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Normalize': {
-        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-        line = `let node_${id} = normalize(${vec});`;
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(1.0)';
+        const t = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.5';
+        line = `let node_${id} = mix(${a}, ${b}, ${t});`;
         outType = 'vec3';
         break;
       }
@@ -341,67 +332,80 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         outType = 'f32';
         break;
       }
-      
       case 'Saturate': {
         const v = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
         line = `let node_${id} = clamp(${v}, vec3<f32>(0.0), vec3<f32>(1.0));`;
         outType = 'vec3';
         break;
       }
+
+      // Vector Operations
       case 'Dot': {
-  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-  line = `let node_${id} = dot(${a}, ${b});`;
-  outType = 'f32';
-  break;
-}
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+        line = `let node_${id} = dot(${a}, ${b});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Cross': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+        line = `let node_${id} = cross(${a}, ${b});`;
+        outType = 'vec3';
+        break;
+      }
+      case 'Normalize': {
+        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+        line = `let node_${id} = normalize(${vec});`;
+        outType = 'vec3';
+        break;
+      }
+      case 'Length': {
+        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+        line = `let node_${id} = length(${vec});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Distance': {
+        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
+        line = `let node_${id} = distance(${a}, ${b});`;
+        outType = 'f32';
+        break;
+      }
+      case 'Reflect': {
+        const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
+        const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+        line = `let node_${id} = reflect(${incident}, ${normal});`;
+        outType = 'vec3';
+        break;
+      }
+      case 'Refract': {
+        const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
+        const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+        const eta = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.5';
+        line = `let node_${id} = refract(${incident}, ${normal}, ${eta});`;
+        outType = 'vec3';
+        break;
+      }
 
-case 'Cross': {
-  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-  line = `let node_${id} = cross(${a}, ${b});`;
-  outType = 'vec3';
-  break;
-}
+      // Utility Nodes
+      case 'Split3': {
+        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+        // Note: Split3 needs special handling as it has multiple outputs
+        line = `let node_${id} = ${vec};`;
+        outType = 'vec3';
+        break;
+      }
+      case 'Combine3': {
+        const x = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
+        const y = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
+        const z = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.0';
+        line = `let node_${id} = vec3<f32>(${x}, ${y}, ${z});`;
+        outType = 'vec3';
+        break;
+      }
 
-case 'Normalize': {
-  const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-  line = `let node_${id} = normalize(${vec});`;
-  outType = 'vec3';
-  break;
-}
-
-case 'Length': {
-  const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-  line = `let node_${id} = length(${vec});`;
-  outType = 'f32';
-  break;
-}
-
-case 'Distance': {
-  const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-  const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
-  line = `let node_${id} = distance(${a}, ${b});`;
-  outType = 'f32';
-  break;
-}
-
-case 'Reflect': {
-  const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
-  const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-  line = `let node_${id} = reflect(${incident}, ${normal});`;
-  outType = 'vec3';
-  break;
-}
-
-case 'Refract': {
-  const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
-  const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-  const eta = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.5';
-  line = `let node_${id} = refract(${incident}, ${normal}, ${eta});`;
-  outType = 'vec3';
-  break;
-}
       // Noise Nodes
       case 'Random': {
         const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';

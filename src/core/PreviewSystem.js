@@ -1,4 +1,4 @@
-// PreviewSystem.js - Complete working preview system
+// PreviewSystem.js - Fixed version with key issues addressed
 
 export class PreviewSystem {
   constructor(editor) {
@@ -29,6 +29,10 @@ export class PreviewSystem {
         case 'constfloat':
         case 'float':
           this.renderFloat(ctx, node);
+          break;
+        case 'constvec3':
+        case 'vec3':
+          this.renderVec3(ctx, node);
           break;
         case 'multiply':
           this.renderMath(ctx, node, '×', '#f59e0b');
@@ -123,6 +127,41 @@ export class PreviewSystem {
     
     this.editor.draw();
   }
+
+  // FIXED: Vec3 renderer added
+renderVec3(ctx, node) {
+  // SAFE parameter access with type conversion and fallbacks
+  let x = this.getParameter(node, 'x');
+  let y = this.getParameter(node, 'y');  
+  let z = this.getParameter(node, 'z');
+  
+  // Convert to numbers and provide fallbacks
+  x = (typeof x === 'number') ? x : parseFloat(x) || 0;
+  y = (typeof y === 'number') ? y : parseFloat(y) || 0;
+  z = (typeof z === 'number') ? z : parseFloat(z) || 0;
+  
+  // Clamp values to reasonable ranges
+  x = Math.max(-10, Math.min(10, x));
+  y = Math.max(-10, Math.min(10, y));
+  z = Math.max(-10, Math.min(10, z));
+  
+  // Use RGB components
+  const r = Math.abs(x) * 127 + 128;
+  const g = Math.abs(y) * 127 + 128;
+  const b = Math.abs(z) * 127 + 128;
+  
+  ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+  ctx.fillRect(0, 0, this.size, this.size);
+  
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 6px monospace';
+  ctx.textAlign = 'center';
+  
+  // Safe toFixed calls
+  ctx.fillText(`X:${x.toFixed(2)}`, this.size/2, 10);
+  ctx.fillText(`Y:${y.toFixed(2)}`, this.size/2, 20);
+  ctx.fillText(`Z:${z.toFixed(2)}`, this.size/2, 30);
+}
 
   // Render methods
   renderFloat(ctx, node) {
@@ -915,7 +954,7 @@ export class PreviewSystem {
     return ((Math.sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1 + 1) * 0.5;
   }
 
-  // Node value computation
+  // FIXED: Node value computation with better parameter handling
   computeNodeValue(node, visited = new Set()) {
     if (visited.has(node.id)) {
       console.warn(`Circular dependency detected for node ${node.kind} (${node.id})`);
@@ -927,14 +966,14 @@ export class PreviewSystem {
     
     switch (node.kind.toLowerCase()) {
       case 'constvec3':
-case 'vec3': {
-  const x = this.getParameter(node, 'x') || 0;
-  const y = this.getParameter(node, 'y') || 0;
-  const z = this.getParameter(node, 'z') || 0;
-  result = [x, y, z];
-  console.log(`computeNodeValue VEC3[${node.id}]: [${x}, ${y}, ${z}]`);
-  break;
-}
+      case 'vec3': {
+        const x = this.getParameter(node, 'x') || 0;
+        const y = this.getParameter(node, 'y') || 0;
+        const z = this.getParameter(node, 'z') || 0;
+        result = [x, y, z];
+        console.log(`computeNodeValue VEC3[${node.id}]: [${x}, ${y}, ${z}]`);
+        break;
+      }
       case 'constfloat':
       case 'float':
         result = this.getParameter(node, 'value') || 0;
@@ -1110,6 +1149,7 @@ case 'vec3': {
     return result;
   }
 
+  // FIXED: Better connection handling
   getConnectedInputs(node, visited = new Set()) {
     const inputs = {};
     
@@ -1135,6 +1175,7 @@ case 'vec3': {
           
           inputs[inputName] = value;
           
+          // Add common aliases
           if (pinIndex === 0) {
             inputs.input = value;
             inputs.value = value;
