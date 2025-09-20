@@ -1,67 +1,120 @@
-// src/codegen/glslBuilder.js - Fixed WGSL builder with duplicates removed
+// src/codegen/glslBuilder.js - Refactored WGSL builder with maintainable structure
 
-function topoOrder(graph){
+// ============================================================================
+// UTILITIES
+// ============================================================================
+
+function topoOrder(graph) {
   const nodes = graph.nodes || [];
   const byId = new Map(nodes.map(n => [n.id, n]));
   const visited = new Set();
   const out = [];
-  function visit(id){
-    if(!id || visited.has(id)) return;
+  
+  function visit(id) {
+    if (!id || visited.has(id)) return;
     visited.add(id);
     const n = byId.get(id);
-    if(!n) return;
-    for(const inp of (n.inputs||[])) if(inp) visit(inp);
+    if (!n) return;
+    for (const inp of (n.inputs || [])) {
+      if (inp) visit(inp);
+    }
     out.push(n);
   }
-  for(const n of nodes) visit(n.id);
+  
+  for (const n of nodes) visit(n.id);
   return out;
 }
 
-function sanitize(id){ 
-  return String(id).replace(/[^a-zA-Z0-9_]/g,'_'); 
+function sanitize(id) { 
+  return String(id).replace(/[^a-zA-Z0-9_]/g, '_'); 
 }
 
-export function buildWGSL(graph){
-  let ordered = topoOrder(graph);
-  
-  // DEBUG: Log all nodes and their types
-  console.log('=== DEBUG: All nodes before filtering ===');
-  if (graph.nodes) {
-    graph.nodes.forEach(node => {
-      console.log(`Node ${node.id}: kind="${node.kind}" type="${node.type}" name="${node.name}"`);
-    });
-  }
-  
-  console.log('=== DEBUG: Ordered nodes ===');
-  ordered.forEach(node => {
-    console.log(`Ordered: ${node.id} -> kind="${node.kind}"`);
-  });
+function pickActiveOutput(graph) {
+  const outs = (graph.nodes || []).filter(n => /OutputFinal/i.test(n.kind || n.type || n.name || ''));
+  const connected = outs.filter(o => Array.isArray(o.inputs) && o.inputs[0]);
+  if (connected.length) return connected[connected.length - 1];
+  return outs[outs.length - 1] || null;
+}
 
-  function pickActiveOutput(graph){
-    const outs = (graph.nodes||[]).filter(n => /OutputFinal/i.test(n.kind||n.type||n.name||''));
-    const connected = outs.filter(o => Array.isArray(o.inputs) && o.inputs[0]);
-    if (connected.length) return connected[connected.length-1];
-    return outs[outs.length-1] || null;
+function upstreamSet(start, byId) {
+  const vis = new Set();
+  (function dfs(id) {
+    if (!id || vis.has(id)) return;
+    vis.add(id);
+    const n = byId.get(id);
+    if (!n) return;
+    for (const inp of (n.inputs || [])) {
+      if (inp) dfs(inp);
+    }
+  })(start);
+  return vis;
+}
+
+// ============================================================================
+// TYPE CONVERSION SYSTEM
+// ============================================================================
+
+class TypeConverter {
+  constructor() {
+    this.types = new Map();   // nodeId -> 'f32' | 'vec2' | 'vec3' | 'vec4'
+    this.exprs = new Map();   // nodeId -> expression string
   }
-  
-  function upstreamSet(start, byId){
-    const vis = new Set();
-    (function dfs(id){
-      if(!id || vis.has(id)) return;
-      vis.add(id);
-      const n = byId.get(id);
-      if(!n) return;
-      for(const inp of (n.inputs||[])) if(inp) dfs(inp);
-    })(start);
-    return vis;
+
+  setNodeOutput(nodeId, expression, type) {
+    this.exprs.set(nodeId, expression);
+    this.types.set(nodeId, type);
   }
-  
-  const outNode = pickActiveOutput(graph);
-  if (outNode){
-    const byId = new Map((graph.nodes||[]).map(n => [n.id, n]));
-    const keep = upstreamSet(outNode.id, byId);
-    ordered = ordered.filter(n => keep.has(n.id));
+
+  want(id, wantType) {
+    const sid = sanitize(id);
+    let e = this.exprs.get(id);
+    let t = this.types.get(id);
+    if (!e) { e = 'vec3<f32>(0.0)'; t = 'vec3'; }
+    
+    if (wantType === 'vec4') return this._toVec4(e, t);
+    if (wantType === 'vec3') return this._toVec3(e, t);
+    if (wantType === 'vec2') return this._toVec2(e, t);
+    if (wantType === 'f32') return this._toF32(e, t);
+    return e;
   }
+
+  _toVec4(e, t) {
+    if (t === 'vec4') return e;
+    if (t === 'vec3') return `vec4<f32>(${e}, 1.0)`;
+    if (t === 'vec2') return `vec4<f32>(${e}.x, ${e}.y, 0.0, 1.0)`;
+    if (t === 'f32') return `vec4<f32>(${e})`;
+    return `vec4<f32>(${e}, 1.0)`;
+  }
+
+  _toVec3(e, t) {
+    if (t === 'vec3') return e;
+    if (t === 'vec4') return `vec3<f32>(${e}.x, ${e}.y, ${e}.z)`;
+    if (t === 'vec2') return `vec3<f32>(${e}.x, ${e}.y, 0.0)`;
+    if (t === 'f32') return `vec3<f32>(${e})`;
+    return e;
+  }
+
+  _toVec2(e, t) {
+    if (t === 'vec2') return e;
+    if (t === 'vec4') return `vec2<f32>(${e}.x, ${e}.y)`;
+    if (t === 'vec3') return `vec2<f32>(${e}.x, ${e}.y)`;
+    if (t === 'f32') return `vec2<f32>(${e})`;
+    return `vec2<f32>(0.0)`;
+  }
+
+  _toF32(e, t) {
+    if (t === 'f32') return e;
+    if (t === 'vec4') return `${e}.w`;
+    if (t === 'vec2') return `(${e}.x + ${e}.y) * 0.5`;
+    if (t === 'vec3') return `(${e}.x + ${e}.y + ${e}.z) / 3.0`;
+    return e;
+  }
+}
+
+// ============================================================================
+// TEXTURE BINDING SYSTEM
+// ============================================================================
+
 function generateTextureBindings(graph) {
   let textureBindings = '';
   let bindingIndex = 1; // Start after uniforms at binding 0
@@ -86,8 +139,430 @@ function generateTextureBindings(graph) {
   
   return { bindings: textureBindings, nextBinding: bindingIndex };
 }
+
+// ============================================================================
+// NODE PROCESSORS
+// ============================================================================
+
+class NodeProcessors {
+  constructor(converter) {
+    this.converter = converter;
+  }
+
+  // Input nodes
+  processUV(node, id) {
+    return { line: `let node_${id} = in.uv;`, type: 'vec2' };
+  }
+
+  processTime(node, id) {
+    return { line: `let node_${id} = u.time;`, type: 'f32' };
+  }
+
+  // Constant nodes
+  processConstFloat(node, id) {
+    const v = (typeof node.value === 'number') ? node.value : (node.props?.value ?? 0.0);
+    return { line: `let node_${id} = ${v.toFixed(6)};`, type: 'f32' };
+  }
+
+  processConstVec3(node, id) {
+    // Read from props, NOT coordinates
+    const x = parseFloat(node.props?.x) || 0;
+    const y = parseFloat(node.props?.y) || 0;
+    const z = parseFloat(node.props?.z) || 0;
+    
+    const line = `let node_${id} = vec3<f32>(${x.toFixed(6)}, ${y.toFixed(6)}, ${z.toFixed(6)});`;
+    return { line, type: 'vec3' };
+  }
+
+  // Expression node
+  processExpr(node, id) {
+    const a = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : '0.0';
+    const b = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'f32') : '0.0';
+    let expr = (node.expr || 'a').toString();
+    
+    console.log('Original expression:', expr);
+    
+    // Replace variables with connected inputs FIRST
+    expr = expr.replace(/\ba\b/g, `(${a})`);
+    expr = expr.replace(/\bb\b/g, `(${b})`);
+    
+    // Replace built-in references
+    expr = expr.replace(/\bu_time\b/g, 'u.time');
+    expr = expr.replace(/\buv\b/g, 'in.uv');
+    expr = expr.replace(/\b(pi|PI)\b/g, '3.14159265359');
+    
+    console.log('Final WGSL expression:', expr);
+    
+    return { line: `let node_${id} = ${expr};`, type: 'f32' };
+  }
+
+  // Field nodes
+  processCircleField(node, id) {
+    const R = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : (node.props?.radius ?? 0.25);
+    const E = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'f32') : (node.props?.epsilon ?? 0.02);
+    const line = `let node_${id} = 1.0 - smoothstep((${R}) - max(${E}, 0.0001), (${R}) + max(${E}, 0.0001), distance(in.uv, vec2<f32>(0.5, 0.5)));`;
+    return { line, type: 'f32' };
+  }
+
+  // Math operations (vector)
+  processMathVec3(node, id, op) {
+    const A = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(1.0)';
+    const B = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(1.0)';
+    
+    let operation;
+    switch (op) {
+      case 'Multiply': operation = `(${A}) * (${B})`; break;
+      case 'Add': operation = `(${A}) + (${B})`; break;
+      case 'Subtract': operation = `(${A}) - (${B})`; break;
+      case 'Divide': operation = `(${A}) / max((${B}), vec3<f32>(0.0001))`; break;
+      default: operation = `(${A}) + (${B})`;
+    }
+    
+    const line = `let node_${id} = ${operation};`;
+    console.log(`${op} line: ${line}`);
+    return { line, type: 'vec3' };
+  }
+
+  // Math functions (scalar)
+  processMathScalar(node, id, func) {
+    const inp = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : '0.0';
+    let operation;
+    
+    switch (func) {
+      case 'Sin': operation = `sin(${inp})`; break;
+      case 'Cos': operation = `cos(${inp})`; break;
+      case 'Tan': operation = `tan(${inp})`; break;
+      case 'Floor': operation = `floor(${inp})`; break;
+      case 'Fract': operation = `fract(${inp})`; break;
+      case 'Abs': operation = `abs(${inp})`; break;
+      case 'Sqrt': operation = `sqrt(max(${inp}, 0.0))`; break;
+      case 'Sign': operation = `sign(${inp})`; break;
+      default: operation = inp;
+    }
+    
+    return { line: `let node_${id} = ${operation};`, type: 'f32' };
+  }
+
+  // Two-input math functions
+  processMathDual(node, id, func) {
+    const a = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : '0.0';
+    const b = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'f32') : '0.0';
+    let operation;
+    
+    switch (func) {
+      case 'Pow': operation = `pow(${a}, ${b})`; break;
+      case 'Min': operation = `min(${a}, ${b})`; break;
+      case 'Max': operation = `max(${a}, ${b})`; break;
+      case 'Step': operation = `step(${a}, ${b})`; break;
+      case 'Mod': operation = `${a} - ${b} * floor(${a} / max(${b}, 0.0001))`; break;
+      default: operation = `${a}`;
+    }
+    
+    return { line: `let node_${id} = ${operation};`, type: 'f32' };
+  }
+
+  // Three-input functions
+  processMathTriple(node, id, func) {
+    if (func === 'Clamp') {
+      const value = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : '0.0';
+      const minVal = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'f32') : '0.0';
+      const maxVal = node.inputs?.[2] ? this.converter.want(node.inputs[2], 'f32') : '1.0';
+      return { line: `let node_${id} = clamp(${value}, ${minVal}, ${maxVal});`, type: 'f32' };
+    }
+    
+    if (func === 'Smoothstep') {
+      const edge0 = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : '0.0';
+      const edge1 = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'f32') : '1.0';
+      const x = node.inputs?.[2] ? this.converter.want(node.inputs[2], 'f32') : '0.5';
+      return { line: `let node_${id} = smoothstep(${edge0}, ${edge1}, ${x});`, type: 'f32' };
+    }
+    
+    if (func === 'Mix') {
+      const a = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+      const b = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(1.0)';
+      const t = node.inputs?.[2] ? this.converter.want(node.inputs[2], 'f32') : '0.5';
+      return { line: `let node_${id} = mix(${a}, ${b}, ${t});`, type: 'vec3' };
+    }
+    
+    return { line: `let node_${id} = 0.0;`, type: 'f32' };
+  }
+
+  // Vector operations
+  processVectorOp(node, id, op) {
+    if (op === 'Dot') {
+      const a = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+      const b = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+      return { line: `let node_${id} = dot(${a}, ${b});`, type: 'f32' };
+    }
+    
+    if (op === 'Cross') {
+      const a = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+      const b = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+      return { line: `let node_${id} = cross(${a}, ${b});`, type: 'vec3' };
+    }
+    
+    if (op === 'Normalize') {
+      const vec = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
+      return { line: `let node_${id} = normalize(${vec});`, type: 'vec3' };
+    }
+    
+    if (op === 'Length') {
+      const vec = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+      return { line: `let node_${id} = length(${vec});`, type: 'f32' };
+    }
+    
+    if (op === 'Distance') {
+      const a = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+      const b = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
+      return { line: `let node_${id} = distance(${a}, ${b});`, type: 'f32' };
+    }
+    
+    if (op === 'Reflect') {
+      const incident = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
+      const normal = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+      return { line: `let node_${id} = reflect(${incident}, ${normal});`, type: 'vec3' };
+    }
+    
+    if (op === 'Refract') {
+      const incident = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
+      const normal = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
+      const eta = node.inputs?.[2] ? this.converter.want(node.inputs[2], 'f32') : '1.5';
+      return { line: `let node_${id} = refract(${incident}, ${normal}, ${eta});`, type: 'vec3' };
+    }
+    
+    return { line: `let node_${id} = vec3<f32>(0.0);`, type: 'vec3' };
+  }
+
+  // Utility nodes
+  processSaturate(node, id) {
+    const v = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+    return { line: `let node_${id} = clamp(${v}, vec3<f32>(0.0), vec3<f32>(1.0));`, type: 'vec3' };
+  }
+
+  processSplit3(node, id) {
+    const vec = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
+    return { line: `let node_${id} = ${vec};`, type: 'vec3' };
+  }
+
+  processCombine3(node, id) {
+    const x = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'f32') : '0.0';
+    const y = node.inputs?.[1] ? this.converter.want(node.inputs[1], 'f32') : '0.0';
+    const z = node.inputs?.[2] ? this.converter.want(node.inputs[2], 'f32') : '0.0';
+    return { line: `let node_${id} = vec3<f32>(${x}, ${y}, ${z});`, type: 'vec3' };
+  }
+
+  // Noise nodes
+  processRandom(node, id) {
+    const uv = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec2') : 'in.uv';
+    const seed = node.props?.seed ?? 1.0;
+    const scale = node.props?.scale ?? 1.0;
+    const line = `let node_${id} = vec3<f32>(random(${uv} * ${scale.toFixed(3)} + vec2<f32>(${seed.toFixed(3)})));`;
+    return { line, type: 'vec3' };
+  }
+
+  processValueNoise(node, id) {
+    const uv = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec2') : 'in.uv';
+    const scale = node.props?.scale ?? 5.0;
+    const amplitude = node.props?.amplitude ?? 1.0;
+    const offset = node.props?.offset ?? 0.0;
+    const power = node.props?.power ?? 1.0;
+    const line = `let node_${id} = vec3<f32>(clamp(pow(valueNoise(${uv} * ${scale.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}, ${power.toFixed(3)}), 0.0, 1.0));`;
+    return { line, type: 'vec3' };
+  }
+
+  processAdvancedNoise(node, id, type) {
+    const uv = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec2') : 'in.uv';
+    
+    if (type === 'FBMNoise') {
+      const scale = node.props?.scale ?? 3.0;
+      const octaves = node.props?.octaves ?? 4;
+      const persistence = node.props?.persistence ?? 0.5;
+      const lacunarity = node.props?.lacunarity ?? 2.0;
+      const amplitude = node.props?.amplitude ?? 1.0;
+      const offset = node.props?.offset ?? 0.0;
+      const gain = node.props?.gain ?? 0.5;
+      const warp = node.props?.warp ?? 0.0;
+      
+      let uvExpr = `${uv} * ${scale.toFixed(3)}`;
+      if (warp > 0.001) {
+        uvExpr = `${uvExpr} + vec2<f32>(valueNoise(${uv} * ${(scale * 2.0).toFixed(3)}) * ${warp.toFixed(3)})`;
+      }
+      const line = `let node_${id} = vec3<f32>(clamp((fbm(${uvExpr}, ${octaves}, ${persistence.toFixed(3)}, ${lacunarity.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}) * ${gain.toFixed(3)}, 0.0, 1.0));`;
+      return { line, type: 'vec3' };
+    }
+    
+    // Add other noise types as needed...
+    return { line: `let node_${id} = vec3<f32>(0.0);`, type: 'vec3' };
+  }
+
+  // Texture nodes
+  processTexture2D(node, id) {
+    const uv = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec2') : 'in.uv';
+    const textureId = sanitize(node.id);
+    const line = `let node_${id} = textureSample(texture_${textureId}, sampler_${textureId}, ${uv});`;
+    console.log(`Texture2D line: ${line}`);
+    return { line, type: 'vec4' };
+  }
+
+  processTextureCube(node, id) {
+    const dir = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 
+      'normalize(vec3<f32>(in.uv.x * 2.0 - 1.0, in.uv.y * 2.0 - 1.0, 1.0))';
+    const textureId = sanitize(node.id);
+    const line = `let node_${id} = textureSample(textureCube_${textureId}, samplerCube_${textureId}, ${dir});`;
+    console.log(`TextureCube line: ${line}`);
+    return { line, type: 'vec4' };
+  }
+
+  // Output node
+  processOutputFinal(node, id) {
+    const c = node.inputs?.[0] ? this.converter.want(node.inputs[0], 'vec3') : 'vec3<f32>(0.0,0.0,0.0)';
+    const line = `finalColor = ${c};`;
+    console.log(`OutputFinal line: ${line}`);
+    return { line, type: 'vec3' };
+  }
+}
+
+// ============================================================================
+// MAIN BUILDER
+// ============================================================================
+
+export function buildWGSL(graph) {
+  console.log('=== WGSL Builder: Starting ===');
+  
+  let ordered = topoOrder(graph);
+  
+  // Debug logging
+  console.log('=== DEBUG: All nodes before filtering ===');
+  if (graph.nodes) {
+    graph.nodes.forEach(node => {
+      console.log(`Node ${node.id}: kind="${node.kind}" type="${node.type}" name="${node.name}"`);
+    });
+  }
+  
+  console.log('=== DEBUG: Ordered nodes ===');
+  ordered.forEach(node => {
+    console.log(`Ordered: ${node.id} -> kind="${node.kind}"`);
+  });
+
+  // Filter to only connected nodes
+  const outNode = pickActiveOutput(graph);
+  if (outNode) {
+    const byId = new Map((graph.nodes || []).map(n => [n.id, n]));
+    const keep = upstreamSet(outNode.id, byId);
+    ordered = ordered.filter(n => keep.has(n.id));
+    console.log(`Filtered to ${ordered.length} connected nodes`);
+  }
+
+  // Handle empty graph
   if (!outNode || ordered.length === 0) {
-    return `
+    console.log('Empty graph, returning fallback shader');
+    return generateFallbackShader();
+  }
+
+  // Process nodes
+  const converter = new TypeConverter();
+  const processors = new NodeProcessors(converter);
+  const lines = [];
+
+  for (const node of ordered) {
+    const id = sanitize(node.id);
+    console.log(`Processing node ${id}: kind="${node.kind}"`);
+    
+    const result = processNode(node, id, processors);
+    
+    if (result) {
+      console.log(`Generated line for ${node.kind}: ${result.line}`);
+      lines.push(result.line);
+      
+      // Save for downstream nodes (except OutputFinal)
+      if (node.kind !== 'OutputFinal') {
+        converter.setNodeOutput(node.id, `node_${id}`, result.type);
+      }
+    }
+  }
+
+  // Generate final shader
+  const textureInfo = generateTextureBindings(graph);
+  const shader = generateShaderCode(textureInfo.bindings, lines);
+  
+  console.log('=== WGSL Builder: Complete ===');
+  return shader;
+}
+
+// ============================================================================
+// NODE PROCESSING DISPATCHER
+// ============================================================================
+
+function processNode(node, id, processors) {
+  const kind = node.kind;
+  
+  // Input nodes
+  if (kind === 'UV') return processors.processUV(node, id);
+  if (kind === 'Time') return processors.processTime(node, id);
+  
+  // Constants
+  if (kind === 'ConstFloat') return processors.processConstFloat(node, id);
+  if (kind === 'ConstVec3') return processors.processConstVec3(node, id);
+  
+  // Expression
+  if (kind === 'Expr') return processors.processExpr(node, id);
+  
+  // Fields
+  if (kind === 'CircleField') return processors.processCircleField(node, id);
+  
+  // Vector math
+  if (['Multiply', 'Add', 'Subtract', 'Divide'].includes(kind)) {
+    return processors.processMathVec3(node, id, kind);
+  }
+  
+  // Scalar math functions
+  if (['Sin', 'Cos', 'Tan', 'Floor', 'Fract', 'Abs', 'Sqrt', 'Sign'].includes(kind)) {
+    return processors.processMathScalar(node, id, kind);
+  }
+  
+  // Dual input math
+  if (['Pow', 'Min', 'Max', 'Step', 'Mod'].includes(kind)) {
+    return processors.processMathDual(node, id, kind);
+  }
+  
+  // Triple input math
+  if (['Clamp', 'Smoothstep', 'Mix'].includes(kind)) {
+    return processors.processMathTriple(node, id, kind);
+  }
+  
+  // Vector operations
+  if (['Dot', 'Cross', 'Normalize', 'Length', 'Distance', 'Reflect', 'Refract'].includes(kind)) {
+    return processors.processVectorOp(node, id, kind);
+  }
+  
+  // Utility
+  if (kind === 'Saturate') return processors.processSaturate(node, id);
+  if (kind === 'Split3') return processors.processSplit3(node, id);
+  if (kind === 'Combine3') return processors.processCombine3(node, id);
+  
+  // Noise
+  if (kind === 'Random') return processors.processRandom(node, id);
+  if (kind === 'ValueNoise') return processors.processValueNoise(node, id);
+  if (kind === 'FBMNoise') return processors.processAdvancedNoise(node, id, kind);
+  
+  // Textures
+  if (kind === 'Texture2D') return processors.processTexture2D(node, id);
+  if (kind === 'TextureCube') return processors.processTextureCube(node, id);
+  
+  // Output
+  if (kind === 'OutputFinal') return processors.processOutputFinal(node, id);
+  
+  // Unknown node
+  console.log(`UNKNOWN NODE TYPE: "${kind}"`);
+  return { line: `let node_${id} = vec3<f32>(0.0);`, type: 'vec3' };
+}
+
+// ============================================================================
+// SHADER CODE GENERATION
+// ============================================================================
+
+function generateFallbackShader() {
+  return `
 struct Globals { time: f32, }
 @group(0) @binding(0) var<uniform> u : Globals;
 struct VSOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
@@ -109,490 +584,15 @@ fn random(st: vec2<f32>) -> f32 {
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }`;
-  }
-  
-  const lines = [];
-  const types = new Map();   // nodeId -> 'f32' | 'vec2' | 'vec3'
-  const exprs = new Map();   // nodeId -> expression string
-
-function want(id, wantType){
-  const sid = sanitize(id);
-  let e = exprs.get(id);
-  let t = types.get(id);
-  if(!e){ e = 'vec3<f32>(0.0)'; t = 'vec3'; }
-  
-  function toVec4(e,t){
-    if(t === 'vec4') return [e,'vec4'];
-    if(t === 'vec3') return [`vec4<f32>(${e}, 1.0)`, 'vec4'];
-    if(t === 'vec2') return [`vec4<f32>(${e}.x, ${e}.y, 0.0, 1.0)`, 'vec4'];
-    if(t === 'f32')  return [`vec4<f32>(${e})`, 'vec4'];
-    return [`vec4<f32>(${e}, 1.0)`,'vec4'];
-  }
-  
-  function toVec3(e,t){
-    if(t === 'vec3') return [e,'vec3'];
-    if(t === 'vec4') return [`vec3<f32>(${e}.x, ${e}.y, ${e}.z)`, 'vec3']; // Extract RGB
-    if(t === 'vec2') return [`vec3<f32>(${e}.x, ${e}.y, 0.0)`, 'vec3'];
-    if(t === 'f32')  return [`vec3<f32>(${e})`, 'vec3'];
-    return [e,'vec3'];
-  }
-  
-  function toF32(e,t){
-    if(t === 'f32') return [e,'f32'];
-    if(t === 'vec4') return [`${e}.w`, 'f32']; // Extract alpha
-    if(t === 'vec2') return [`(${e}.x + ${e}.y) * 0.5`, 'f32'];
-    if(t === 'vec3') return [`(${e}.x + ${e}.y + ${e}.z) / 3.0`, 'f32'];
-    return [e,'f32'];
-  }
-  
-  if(wantType === 'vec4') return toVec4(e,t)[0];
-  if(wantType === 'vec3') return toVec3(e,t)[0];
-  if(wantType === 'vec2'){
-    if(t === 'vec2') return e;
-    if(t === 'vec4') return `vec2<f32>(${e}.x, ${e}.y)`;
-    if(t === 'vec3') return `vec2<f32>(${e}.x, ${e}.y)`;
-    if(t === 'f32')  return `vec2<f32>(${e})`;
-    return `vec2<f32>(0.0)`;
-  }
-  if(wantType === 'f32') return toF32(e,t)[0];
-  return e;
 }
-  for(const n of ordered){
-    const id = sanitize(n.id);
-    let line = '';
-    let outType = 'vec3';
-    
-    console.log(`Processing node ${id}: kind="${n.kind}"`);
-    
-    switch(n.kind){
-      case 'UV': {
-        line = `let node_${id} = in.uv;`;
-        outType = 'vec2';
-        break;
-      }
-      case 'Time': {
-        line = `let node_${id} = u.time;`;
-        outType = 'f32';
-        break;
-      }
-      case 'ConstFloat': {
-        const v = (typeof n.value === 'number') ? n.value : (n.props?.value ?? 0.0);
-        line = `let node_${id} = ${v.toFixed(6)};`;
-        outType = 'f32';
-        break;
-      }
-case 'ConstVec3': {
-  // Read from props, NOT coordinates
-  const x = parseFloat(n.props?.x) || 0;
-  const y = parseFloat(n.props?.y) || 0;
-  const z = parseFloat(n.props?.z) || 0;
-  
-  line = `let node_${id} = vec3<f32>(${x.toFixed(6)}, ${y.toFixed(6)}, ${z.toFixed(6)});`;
-  outType = 'vec3';
-  break;
-}
-      case 'Expr': {
-        const a = n.inputs?.[0] ? want(n.inputs[0],'f32') : '0.0';
-        const b = n.inputs?.[1] ? want(n.inputs[1],'f32') : '0.0';
-        let expr = (n.expr || 'a').toString();
-        
-        console.log('Original expression:', expr);
-        
-        // Replace variables with connected inputs FIRST (before function replacements)
-        expr = expr.replace(/\ba\b/g, `(${a})`);
-        expr = expr.replace(/\bb\b/g, `(${b})`);
-        
-        // Replace time and UV references
-        expr = expr.replace(/\bu_time\b/g, 'u.time');
-        expr = expr.replace(/\buv\b/g, 'in.uv');
-        
-        // Replace constants
-        expr = expr.replace(/\bpi\b/g, '3.14159265359');
-        expr = expr.replace(/\bPI\b/g, '3.14159265359');
-        
-        console.log('Final WGSL expression:', expr);
-        
-        line = `let node_${id} = ${expr};`;
-        outType = 'f32';
-        break;
-      }
-      case 'CircleField': {
-        // Use connected inputs if available, otherwise use node parameters, finally fallback to defaults
-        const R = n.inputs?.[0] ? want(n.inputs[0],'f32') : (n.props?.radius ?? 0.25);
-        const E = n.inputs?.[1] ? want(n.inputs[1],'f32') : (n.props?.epsilon ?? 0.02);
-        line = `let node_${id} = 1.0 - smoothstep((${R}) - max(${E}, 0.0001), (${R}) + max(${E}, 0.0001), distance(in.uv, vec2<f32>(0.5, 0.5)));`;
-        outType = 'f32';
-        break;
-      }
-      
-      // Vector Math Operations (keep as vec3 for color operations)
-      case 'Multiply': {
-        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(1.0)';
-        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(1.0)';
-        line = `let node_${id} = (${A}) * (${B});`;
-        outType = 'vec3';
-        console.log(`Multiply line: ${line}`);
-        break;
-      }
-      case 'Add': {
-        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
-        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = (${A}) + (${B});`;
-        outType = 'vec3';
-        console.log(`Add line: ${line}`);
-        break;
-      }
-      case 'Subtract': {
-        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
-        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = (${A}) - (${B});`;
-        outType = 'vec3';
-        console.log(`Subtract line: ${line}`);
-        break;
-      }
-      case 'Divide': {
-        const A = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(1.0)';
-        const B = n.inputs?.[1] ? want(n.inputs[1],'vec3') : 'vec3<f32>(1.0)';
-        line = `let node_${id} = (${A}) / max((${B}), vec3<f32>(0.0001));`;
-        outType = 'vec3';
-        console.log(`Divide line: ${line}`);
-        break;
-      }
-      
-      // Single Value Math Functions
-      case 'Sin': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = sin(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Cos': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = cos(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Tan': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = tan(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Floor': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = floor(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Fract': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = fract(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Abs': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = abs(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Sqrt': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = sqrt(max(${inp}, 0.0));`;
-        outType = 'f32';
-        break;
-      }
-      case 'Pow': {
-        const base = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '1.0';
-        const exp = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '2.0';
-        line = `let node_${id} = pow(${base}, ${exp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Min': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
-        line = `let node_${id} = min(${a}, ${b});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Max': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
-        line = `let node_${id} = max(${a}, ${b});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Clamp': {
-        const value = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        const minVal = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
-        const maxVal = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.0';
-        line = `let node_${id} = clamp(${value}, ${minVal}, ${maxVal});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Smoothstep': {
-        const edge0 = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        const edge1 = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '1.0';
-        const x = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.5';
-        line = `let node_${id} = smoothstep(${edge0}, ${edge1}, ${x});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Step': {
-        const edge = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.5';
-        const x = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
-        line = `let node_${id} = step(${edge}, ${x});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Mix': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(1.0)';
-        const t = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.5';
-        line = `let node_${id} = mix(${a}, ${b}, ${t});`;
-        outType = 'vec3';
-        break;
-      }
-      case 'Sign': {
-        const inp = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        line = `let node_${id} = sign(${inp});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Mod': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '1.0';
-        line = `let node_${id} = ${a} - ${b} * floor(${a} / max(${b}, 0.0001));`;
-        outType = 'f32';
-        break;
-      }
-      case 'Saturate': {
-        const v = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = clamp(${v}, vec3<f32>(0.0), vec3<f32>(1.0));`;
-        outType = 'vec3';
-        break;
-      }
 
-      // Vector Operations
-      case 'Dot': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-        line = `let node_${id} = dot(${a}, ${b});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Cross': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-        line = `let node_${id} = cross(${a}, ${b});`;
-        outType = 'vec3';
-        break;
-      }
-      case 'Normalize': {
-        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, 0.0, 0.0)';
-        line = `let node_${id} = normalize(${vec});`;
-        outType = 'vec3';
-        break;
-      }
-      case 'Length': {
-        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = length(${vec});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Distance': {
-        const a = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-        const b = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0)';
-        line = `let node_${id} = distance(${a}, ${b});`;
-        outType = 'f32';
-        break;
-      }
-      case 'Reflect': {
-        const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
-        const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-        line = `let node_${id} = reflect(${incident}, ${normal});`;
-        outType = 'vec3';
-        break;
-      }
-      case 'Refract': {
-        const incident = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(1.0, -1.0, 0.0)';
-        const normal = n.inputs?.[1] ? want(n.inputs[1], 'vec3') : 'vec3<f32>(0.0, 1.0, 0.0)';
-        const eta = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '1.5';
-        line = `let node_${id} = refract(${incident}, ${normal}, ${eta});`;
-        outType = 'vec3';
-        break;
-      }
-
-      // Utility Nodes
-      case 'Split3': {
-        const vec = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 'vec3<f32>(0.0)';
-        // Note: Split3 needs special handling as it has multiple outputs
-        line = `let node_${id} = ${vec};`;
-        outType = 'vec3';
-        break;
-      }
-      case 'Combine3': {
-        const x = n.inputs?.[0] ? want(n.inputs[0], 'f32') : '0.0';
-        const y = n.inputs?.[1] ? want(n.inputs[1], 'f32') : '0.0';
-        const z = n.inputs?.[2] ? want(n.inputs[2], 'f32') : '0.0';
-        line = `let node_${id} = vec3<f32>(${x}, ${y}, ${z});`;
-        outType = 'vec3';
-        break;
-      }
-
-      // Noise Nodes
-      case 'Random': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const seed = n.props?.seed ?? 1.0;
-        const scale = n.props?.scale ?? 1.0;
-        line = `let node_${id} = vec3<f32>(random(${uv} * ${scale.toFixed(3)} + vec2<f32>(${seed.toFixed(3)})));`;
-        outType = 'vec3';
-        break;
-      }
-      case 'ValueNoise': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const scale = n.props?.scale ?? 5.0;
-        const amplitude = n.props?.amplitude ?? 1.0;
-        const offset = n.props?.offset ?? 0.0;
-        const power = n.props?.power ?? 1.0;
-        line = `let node_${id} = vec3<f32>(clamp(pow(valueNoise(${uv} * ${scale.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}, ${power.toFixed(3)}), 0.0, 1.0));`;
-        outType = 'vec3';
-        break;
-      }
-      case 'FBMNoise': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const scale = n.props?.scale ?? 3.0;
-        const octaves = n.props?.octaves ?? 4;
-        const persistence = n.props?.persistence ?? 0.5;
-        const lacunarity = n.props?.lacunarity ?? 2.0;
-        const amplitude = n.props?.amplitude ?? 1.0;
-        const offset = n.props?.offset ?? 0.0;
-        const gain = n.props?.gain ?? 0.5;
-        const warp = n.props?.warp ?? 0.0;
-        let uvExpr = `${uv} * ${scale.toFixed(3)}`;
-        if (warp > 0.001) {
-          uvExpr = `${uvExpr} + vec2<f32>(valueNoise(${uv} * ${(scale * 2.0).toFixed(3)}) * ${warp.toFixed(3)})`;
-        }
-        line = `let node_${id} = vec3<f32>(clamp((fbm(${uvExpr}, ${octaves}, ${persistence.toFixed(3)}, ${lacunarity.toFixed(3)}) * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}) * ${gain.toFixed(3)}, 0.0, 1.0));`;
-        outType = 'vec3';
-        break;
-      }
-      case 'SimplexNoise': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const scale = n.props?.scale ?? 4.0;
-        const amplitude = n.props?.amplitude ?? 1.0;
-        const offset = n.props?.offset ?? 0.0;
-        const ridge = n.props?.ridge ?? false;
-        const turbulence = n.props?.turbulence ?? false;
-        let noiseExpr = `simplexNoise(${uv} * ${scale.toFixed(3)})`;
-        if (ridge) {
-          noiseExpr = `abs(${noiseExpr})`;
-        }
-        if (turbulence) {
-          noiseExpr = `abs(${noiseExpr})`;
-        }
-        line = `let node_${id} = vec3<f32>(clamp(${noiseExpr} * ${amplitude.toFixed(3)} + ${offset.toFixed(3)}, 0.0, 1.0));`;
-        outType = 'vec3';
-        break;
-      }
-      case 'VoronoiNoise': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const scale = n.props?.scale ?? 8.0;
-        const randomness = n.props?.randomness ?? 1.0;
-        const smoothness = n.props?.smoothness ?? 0.0;
-        const outputType = n.props?.outputType ?? 0;
-        let voronoiExpr = `voronoi(${uv} * ${scale.toFixed(3)}, ${randomness.toFixed(3)})`;
-        if (outputType === 1) {
-          voronoiExpr = `${voronoiExpr}.y`;
-        } else {
-          voronoiExpr = `${voronoiExpr}.x`;
-        }
-        if (smoothness > 0.001) {
-          voronoiExpr = `smoothstep(0.0, ${smoothness.toFixed(3)}, ${voronoiExpr})`;
-        }
-        line = `let node_${id} = vec3<f32>(clamp(${voronoiExpr}, 0.0, 1.0));`;
-        outType = 'vec3';
-        break;
-      }
-      case 'RidgedNoise': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const scale = n.props?.scale ?? 4.0;
-        const octaves = n.props?.octaves ?? 6;
-        const lacunarity = n.props?.lacunarity ?? 2.0;
-        const gain = n.props?.gain ?? 0.5;
-        const amplitude = n.props?.amplitude ?? 1.0;
-        const offset = n.props?.offset ?? 1.0;
-        const threshold = n.props?.threshold ?? 0.0;
-        line = `let node_${id} = vec3<f32>(clamp(ridgedNoise(${uv} * ${scale.toFixed(3)}, ${octaves}, ${lacunarity.toFixed(3)}, ${gain.toFixed(3)}, ${offset.toFixed(3)}, ${threshold.toFixed(3)}) * ${amplitude.toFixed(3)}, 0.0, 1.0));`;
-        outType = 'vec3';
-        break;
-      }
-      case 'WarpNoise': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const scale = n.props?.scale ?? 3.0;
-        const warpScale = n.props?.warpScale ?? 2.0;
-        const warpStrength = n.props?.warpStrength ?? 0.1;
-        const octaves = n.props?.octaves ?? 3;
-        const amplitude = n.props?.amplitude ?? 1.0;
-        line = `let node_${id} = vec3<f32>(clamp(warpedNoise(${uv}, ${scale.toFixed(3)}, ${warpScale.toFixed(3)}, ${warpStrength.toFixed(3)}, ${octaves}) * ${amplitude.toFixed(3)}, 0.0, 1.0));`;
-        outType = 'vec3';
-        break;
-      }
- case 'Texture2D': {
-        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
-        const textureId = sanitize(n.id);
-        
-        // Sample the texture - this returns a vec4 (RGBA)
-        line = `let node_${id} = textureSample(texture_${textureId}, sampler_${textureId}, ${uv});`;
-        outType = 'vec4';
-        console.log(`Texture2D line: ${line}`);
-        break;
-      }
-      
-      case 'TextureCube': {
-        const dir = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 
-          'normalize(vec3<f32>(in.uv.x * 2.0 - 1.0, in.uv.y * 2.0 - 1.0, 1.0))';
-        const textureId = sanitize(n.id);
-        
-        line = `let node_${id} = textureSample(textureCube_${textureId}, samplerCube_${textureId}, ${dir});`;
-        outType = 'vec4';
-        console.log(`TextureCube line: ${line}`);
-        break;
-      }
-      case 'OutputFinal': {
-        const c = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0,0.0,0.0)';
-        line = `finalColor = ${c};`;
-        outType = 'vec3';
-        console.log(`OutputFinal line: ${line}`);
-        break;
-      }
-      default: {
-        console.log(`UNKNOWN NODE TYPE: "${n.kind}"`);
-        line = `let node_${id} = vec3<f32>(0.0);`;
-        outType = 'vec3';
-        break;
-      }
-    }
-
-    console.log(`Generated line for ${n.kind}: ${line}`);
-    lines.push(line);
-    
-    // Save expression/type for downstream
-    if(n.kind !== 'OutputFinal'){
-      exprs.set(n.id, `node_${id}`);
-      types.set(n.id, outType);
-    }
-  }
-
-const textureInfo = generateTextureBindings(graph);
-
-const code = /* wgsl */`
+function generateShaderCode(textureBindings, nodeLines) {
+  return `
 struct Globals {
   time: f32,
 }
 
-@group(0) @binding(0) var<uniform> u : Globals;${textureInfo.bindings}
+@group(0) @binding(0) var<uniform> u : Globals;${textureBindings}
 
 struct VSOut {
   @builtin(position) pos: vec4<f32>,
@@ -720,11 +720,8 @@ fn warpedNoise(st: vec2<f32>, scale: f32, warpScale: f32, warpStrength: f32, oct
 @fragment
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   var finalColor: vec3<f32> = vec3<f32>(0.0);
-  ${lines.join('\n  ')}
+  ${nodeLines.join('\n  ')}
   let _keep_uniform = u.time * 0.0;
   return vec4<f32>(finalColor + vec3<f32>(_keep_uniform), 1.0);
 }
-`;
-
-return code;
-}
+`;}
