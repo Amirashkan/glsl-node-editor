@@ -1,4 +1,4 @@
-// main.js - Updated with Save/Load Integration
+// main.js - Updated with Save/Load Integration and Texture Support
 import { initWebGPU, updateShader, drawFrame } from './src/gpu/gpuRenderer.js';
 import { buildWGSL } from './src/codegen/glslBuilder.js';
 import { Editor } from './src/core/Editor.js';
@@ -8,9 +8,38 @@ import { Graph } from './src/data/Graph.js';
 import { makeNode, NodeDefs } from './src/data/NodeDefs.js';
 import { SeedGraphBuilder } from './src/utils/SeedGraphBuilder.js';
 import { FloatingGPUPreview } from './src/ui/FloatingGPUPreview.js';
+import { TextureManager } from './src/core/TextureManager.js';
+
 window.makeNode = makeNode;
 window.NodeDefs = NodeDefs;
 
+// Prevent default browser drag behavior globally
+function setupGlobalDragPrevention() {
+  // Prevent default drag behavior on the entire document
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    document.addEventListener(eventName, preventDefaults, false);
+  });
+  
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  
+  // Only allow drops on designated drop zones
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Check if drop target is a valid drop zone
+    const dropZone = e.target.closest('.file-drop-zone');
+    if (!dropZone) {
+      console.log('Drop ignored - not on a valid drop zone');
+      return false;
+    }
+  });
+  
+  console.log('Global drag prevention setup complete');
+}
 
 async function reinitializeWebGPUAfterLoad() {
   console.log("🔧 Reinitializing WebGPU after file load...");
@@ -44,6 +73,14 @@ async function reinitializeWebGPUAfterLoad() {
     
     // Reinitialize WebGPU with the canvas
     const device = await initWebGPU(canvas);
+    
+    if (device) {
+      // Initialize texture manager
+      window.textureManager = new TextureManager();
+      await window.textureManager.initialize(device);
+      console.log('✅ TextureManager initialized successfully');
+    }
+    
     __deviceReady = !!device;
     
     if (device) {
@@ -63,6 +100,7 @@ async function reinitializeWebGPUAfterLoad() {
     return false;
   }
 }
+
 if (window.__mainLoaded) throw new Error('main.js loaded twice');
 window.__mainLoaded = true;
 
@@ -77,6 +115,24 @@ let __deviceReady = false;
 let floatingPreview = null;
 
 async function initialize() {
+   const canvas = document.getElementById('gpu-canvas') || document.querySelector('canvas');
+  if (canvas) {
+    const device = await initWebGPU(canvas);
+    
+    // ADD THIS BLOCK RIGHT HERE:
+    if (device) {
+      // Initialize texture manager
+      const { TextureManager } = await import('./src/core/TextureManager.js');
+      window.textureManager = new TextureManager();
+      await window.textureManager.initialize(device);
+      console.log('✅ TextureManager initialized successfully');
+    }
+    
+    __deviceReady = !!device;
+  }
+
+  setupGlobalDragPrevention();
+
   try {
     // COMPLETELY DISABLE RhizomiumLoader
     // Override its functions before they can create duplicates
@@ -95,6 +151,14 @@ async function initialize() {
     const canvas = document.getElementById('gpu-canvas') || document.querySelector('canvas');
     if (canvas) {
       const device = await initWebGPU(canvas);
+      
+      if (device) {
+        // Initialize texture manager
+        window.textureManager = new TextureManager();
+        await window.textureManager.initialize(device);
+        console.log('✅ TextureManager initialized successfully');
+      }
+      
       __deviceReady = !!device;
     }
     
@@ -114,34 +178,6 @@ async function initialize() {
     backupDialog = new BackupDialog(saveLoadManager);
     console.log('BackupDialog created:', backupDialog);
     
-    // Setup UI event handlers ONCE - AFTER SaveLoadManager is created
-    console.log('Setting up UI event handlers...');
-    setTimeout(() => {
-      try {
-        console.log('Delayed UI setup starting...');
-        
-        // First, let's see what buttons actually exist
-        const allButtons = document.querySelectorAll('button');
-        console.log('Total buttons found:', allButtons.length);
-        allButtons.forEach((btn, i) => {
-          console.log(`Button ${i}: id="${btn.id}" text="${btn.textContent.trim()}"`);
-        });
-        
-        // Check for snap elements
-        const snapElements = document.querySelectorAll('input[type="checkbox"]');
-        console.log('Snap checkboxes found:', snapElements.length);
-        snapElements.forEach((snap, i) => {
-          console.log(`Snap ${i}: id="${snap.id}" parent="${snap.parentElement.textContent.trim()}"`);
-        });
-        
-        console.log('About to call setupUIEventHandlers...');
-        console.log('setupUIEventHandlers call completed');
-        
-      } catch (error) {
-        console.error('Error in setTimeout:', error);
-      }
-    }, 100);
-    
     // Initialize floating preview and connect to HTML buttons
     const gpuCanvas = document.getElementById('gpu-canvas');
     if (gpuCanvas) {
@@ -152,10 +188,6 @@ async function initialize() {
     
     // Setup UI event handlers
     setupUIEventHandlers();
-    
-    // Debug: Check if SaveLoadManager is working
-    console.log('SaveLoadManager initialized:', !!saveLoadManager);
-    console.log('BackupDialog initialized:', !!backupDialog);
     
     // Setup keyboard shortcuts
     setupKeyboardShortcuts();
@@ -175,9 +207,6 @@ async function initialize() {
     // Initial shader update and render
     await updateShaderFromGraph();
     
-    // REMOVE the duplicate setupUIEventHandlers call
-    // setupUIEventHandlers(); // REMOVED - already called above
-    
     renderLoop();
     
     // Periodic cleanup of RhizomiumLoader interference
@@ -196,7 +225,6 @@ async function initialize() {
     updateStatus('Initialization failed: ' + error.message, 'error');
   }
 }
-
 
 function setupUIEventHandlers() {
   console.log('Setting up UI event handlers...');
@@ -240,164 +268,135 @@ function setupUIEventHandlers() {
     console.log('Load button handler attached (clean)');
   }
 
-  // File input change handler
-// Add this to your main.js file - update the file input handler in setupUIEventHandlers
+  // File input change handler with WebGPU reinitialization
+  const fileInput = removeExistingHandlers('file-import');
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        console.log('=== FILE SELECTED ===', file.name);
+        
+        try {
+          await saveLoadManager.loadFromFile(file);
+          
+          // CRITICAL: Reinitialize WebGPU after loading
+          console.log('=== REINITIALIZING WEBGPU ===');
+          const webgpuSuccess = await reinitializeWebGPUAfterLoad();
+          
+          if (webgpuSuccess) {
+            console.log('✅ WebGPU reinitialized successfully after load');
+          } else {
+            console.error('❌ Failed to reinitialize WebGPU after load');
+          }
+          
+          // Force node recalculation
+          console.log('=== FORCING NODE RECALCULATION ===');
+          if (graph && graph.nodes) {
+            graph.nodes.forEach(node => {
+              delete node.cachedValue;
+              delete node.cached;
+              node.needsUpdate = true;
+            });
+            
+            // Trigger preview refresh
+            console.log('=== TRIGGERING PREVIEW REFRESH ===');
+            // Find any node with a connection and briefly disconnect it to unlock previews
+            const nodeWithConnection = graph.nodes.find(node => 
+              node.inputs && node.inputs.some(input => input !== null)
+            );
 
-// Replace the file input handler section with this:
-const fileInput = removeExistingHandlers('file-import');
-if (fileInput) {
-  fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      console.log('=== FILE SELECTED ===', file.name);
-      
-      try {
-        await saveLoadManager.loadFromFile(file);
-        
-        // CRITICAL: Reinitialize WebGPU after loading
-        console.log('=== REINITIALIZING WEBGPU ===');
-        const webgpuSuccess = await reinitializeWebGPUAfterLoad();
-        
-        if (webgpuSuccess) {
-          console.log('✅ WebGPU reinitialized successfully after load');
-        } else {
-          console.error('❌ Failed to reinitialize WebGPU after load');
+            if (nodeWithConnection) {
+              const inputIndex = nodeWithConnection.inputs.findIndex(input => input !== null);
+              const originalInput = nodeWithConnection.inputs[inputIndex];
+              
+              // Disconnect briefly to trigger global preview unlock
+              nodeWithConnection.inputs[inputIndex] = null;
+              
+              setTimeout(() => {
+                // Reconnect
+                nodeWithConnection.inputs[inputIndex] = originalInput;
+                if (editor.draw) {
+                  editor.draw();
+                }
+              }, 10);
+            }
+            
+            // Refresh node previews
+            console.log('=== REFRESHING NODE PREVIEWS ===');
+            if (editor && editor.nodePreviews) {
+              // Force refresh all node previews
+              graph.nodes.forEach(node => {
+                if (editor.nodePreviews.has(node.id)) {
+                  // Get existing preview settings
+                  const preview = editor.nodePreviews.get(node.id);
+                  // Force refresh by removing and re-adding
+                  editor.nodePreviews.delete(node.id);
+                  editor.nodePreviews.set(node.id, {
+                    enabled: preview.enabled,
+                    size: preview.size || 'small',
+                    showVisualInfo: preview.showVisualInfo !== false,
+                    needsUpdate: true
+                  });
+                } else {
+                  // Create preview for nodes that don't have one
+                  editor.nodePreviews.set(node.id, {
+                    enabled: true,
+                    size: 'small',
+                    showVisualInfo: true,
+                    needsUpdate: true
+                  });
+                }
+              });
+              
+              // Force editor redraw to update previews
+              setTimeout(() => {
+                if (editor.draw) {
+                  editor.draw();
+                }
+              }, 100);
+            }
+            
+            // Auto-refresh node previews with connection simulation
+            console.log('=== AUTO-REFRESHING NODE PREVIEWS ===');
+            graph.nodes.forEach(node => {
+              if (node.inputs) {
+                node.inputs.forEach((input, index) => {
+                  if (input) {
+                    const originalInput = input;
+                    // Disconnect
+                    node.inputs[index] = null;
+                    // Reconnect immediately
+                    setTimeout(() => {
+                      node.inputs[index] = originalInput;
+                      if (editor.draw) {
+                        editor.draw();
+                      }
+                    }, 5);
+                  }
+                });
+              }
+            });
+
+            // Final update after all connections are restored
+            setTimeout(() => {
+              if (window.updateShaderFromGraph) {
+                updateShaderFromGraph();
+              }
+            }, 50);
+          }
+          
+          console.log('=== LOAD COMPLETE ===');
+          
+        } catch (error) {
+          console.error('Load failed:', error);
         }
         
-        // ADD THIS CODE RIGHT HERE:
-        console.log('=== FORCING NODE RECALCULATION ===');
-        if (graph && graph.nodes) {
-          graph.nodes.forEach(node => {
-            delete node.cachedValue;
-            delete node.cached;
-            node.needsUpdate = true;
-          });
-        // Add this after the node recalculation code in your file input handler:
-// Add this after node recalculation - simpler fix for preview refresh:
-console.log('=== TRIGGERING PREVIEW REFRESH ===');
-// Find any node with a connection and briefly disconnect it to unlock previews
-const nodeWithConnection = graph.nodes.find(node => 
-  node.inputs && node.inputs.some(input => input !== null)
-);
-
-if (nodeWithConnection) {
-  const inputIndex = nodeWithConnection.inputs.findIndex(input => input !== null);
-  const originalInput = nodeWithConnection.inputs[inputIndex];
-  
-  // Disconnect briefly to trigger global preview unlock
-  nodeWithConnection.inputs[inputIndex] = null;
-  
-  setTimeout(() => {
-    // Reconnect
-    nodeWithConnection.inputs[inputIndex] = originalInput;
-    if (editor.draw) {
-      editor.draw();
-    }
-  }, 10);
-}
-console.log('=== REFRESHING NODE PREVIEWS ===');
-if (editor && editor.nodePreviews) {
-  // Force refresh all node previews
-  graph.nodes.forEach(node => {
-    if (editor.nodePreviews.has(node.id)) {
-      // Get existing preview settings
-      const preview = editor.nodePreviews.get(node.id);
-      // Force refresh by removing and re-adding
-      editor.nodePreviews.delete(node.id);
-      editor.nodePreviews.set(node.id, {
-        enabled: preview.enabled,
-        size: preview.size || 'small',
-        showVisualInfo: preview.showVisualInfo !== false,
-        needsUpdate: true
-      });
-    } else {
-      // Create preview for nodes that don't have one
-      editor.nodePreviews.set(node.id, {
-        enabled: true,
-        size: 'small',
-        showVisualInfo: true,
-        needsUpdate: true
-      });
-    }
-  });
-  
-  // Force editor redraw to update previews
-  setTimeout(() => {
-    if (editor.draw) {
-      editor.draw();
-    }
-  }, 100);
-}// Add this after your node recalculation code in the file input handler:
-
-console.log('=== AUTO-REFRESHING NODE PREVIEWS ===');
-// Simulate disconnect/reconnect for all connections to refresh previews
-graph.nodes.forEach(node => {
-  if (node.inputs) {
-    node.inputs.forEach((input, index) => {
-      if (input) {
-        const originalInput = input;
-        // Disconnect
-        node.inputs[index] = null;
-        // Reconnect immediately
-        setTimeout(() => {
-          node.inputs[index] = originalInput;
-          if (editor.draw) {
-            editor.draw();
-          }
-        }, 5);
+        // Clear the input after processing
+        e.target.value = '';
       }
     });
+    console.log('File input handler attached (clean)');
   }
-});
-
-// Final update after all connections are restored
-setTimeout(() => {
-  if (window.updateShaderFromGraph) {
-    updateShaderFromGraph();
-  }
-}, 50);  
-          // Trigger complete rebuild
-          setTimeout(() => updateShaderFromGraph(), 50);
-        }
-        
-        console.log('=== LOAD COMPLETE ===');
-        
-      } catch (error) {
-        console.error('Load failed:', error);
-      }
-      
-      // Clear the input after processing
-      e.target.value = '';
-    }
-  });
-  console.log('File input handler attached (clean)');
-}
-
-// ALSO ADD THIS: Update your updateShaderFromGraph function to notify the preview
-// Find your updateShaderFromGraph function and add this at the end:
-
-async function updateShaderFromGraphWithPreview() {
-  // Your existing updateShaderFromGraph code here...
-  const result = await updateShaderFromGraph();
-  
-  // THEN add this preview refresh:
-  if (window.floatingPreview) {
-    setTimeout(() => {
-      const mainCanvas = document.getElementById('gpu-canvas');
-      const previewCanvas = window.floatingPreview.canvas || window.floatingPreview.previewCanvas;
-      
-      if (mainCanvas && previewCanvas) {
-        const ctx = previewCanvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-          ctx.drawImage(mainCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
-        }
-      }
-    }, 100); // Small delay to ensure GPU render is complete
-  }
-  
-  return result;
-}
 
   // Helper function to reliably trigger file selection
   function triggerFileLoad() {
@@ -524,33 +523,6 @@ function setupKeyboardShortcuts() {
         // Ctrl+N: New project
         if (confirm('Create new project? Unsaved changes will be lost.')) {
           createNewProject();
-        }
-        break;
-
-      case 'z':
-        e.preventDefault();
-        if (e.shiftKey) {
-          // Ctrl+Shift+Z: Redo (future feature)
-          console.log('Redo - not implemented yet');
-        } else {
-          // Ctrl+Z: Undo (future feature)
-          console.log('Undo - not implemented yet');
-        }
-        break;
-
-      case 'a':
-        e.preventDefault();
-        // Ctrl+A: Select all
-        if (editor && editor.selectAll) {
-          editor.selectAll();
-        }
-        break;
-
-      case 'd':
-        e.preventDefault();
-        // Ctrl+D: Duplicate selected
-        if (editor && editor.duplicateSelected) {
-          editor.duplicateSelected();
         }
         break;
 
@@ -690,6 +662,22 @@ async function updateShaderFromGraph() {
     // Trigger preview updates if needed
     if (editor && editor.previewIntegration && typeof editor.previewIntegration.onShaderUpdate === 'function') {
       editor.previewIntegration.onShaderUpdate();
+    }
+    
+    // Update floating preview
+    if (window.floatingPreview) {
+      setTimeout(() => {
+        const mainCanvas = document.getElementById('gpu-canvas');
+        const previewCanvas = window.floatingPreview.canvas || window.floatingPreview.previewCanvas;
+        
+        if (mainCanvas && previewCanvas) {
+          const ctx = previewCanvas.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+            ctx.drawImage(mainCanvas, 0, 0, previewCanvas.width, previewCanvas.height);
+          }
+        }
+      }, 100); // Small delay to ensure GPU render is complete
     }
     
   } catch (error) {

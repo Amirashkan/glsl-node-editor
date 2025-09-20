@@ -62,7 +62,30 @@ export function buildWGSL(graph){
     const keep = upstreamSet(outNode.id, byId);
     ordered = ordered.filter(n => keep.has(n.id));
   }
-
+function generateTextureBindings(graph) {
+  let textureBindings = '';
+  let bindingIndex = 1; // Start after uniforms at binding 0
+  
+  if (!graph.nodes) return { bindings: textureBindings, nextBinding: bindingIndex };
+  
+  for (const node of graph.nodes) {
+    if (node.kind === 'Texture2D') {
+      const nodeId = sanitize(node.id);
+      textureBindings += `
+@group(0) @binding(${bindingIndex}) var texture_${nodeId}: texture_2d<f32>;
+@group(0) @binding(${bindingIndex + 1}) var sampler_${nodeId}: sampler;`;
+      bindingIndex += 2;
+    } else if (node.kind === 'TextureCube') {
+      const nodeId = sanitize(node.id);
+      textureBindings += `
+@group(0) @binding(${bindingIndex}) var textureCube_${nodeId}: texture_cube<f32>;
+@group(0) @binding(${bindingIndex + 1}) var samplerCube_${nodeId}: sampler;`;
+      bindingIndex += 2;
+    }
+  }
+  
+  return { bindings: textureBindings, nextBinding: bindingIndex };
+}
   if (!outNode || ordered.length === 0) {
     return `
 struct Globals { time: f32, }
@@ -92,36 +115,48 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   const types = new Map();   // nodeId -> 'f32' | 'vec2' | 'vec3'
   const exprs = new Map();   // nodeId -> expression string
 
-  function want(id, wantType){
-    const sid = sanitize(id);
-    let e = exprs.get(id);
-    let t = types.get(id);
-    if(!e){ e = 'vec3<f32>(0.0)'; t = 'vec3'; }
-    
-    function toVec3(e,t){
-      if(t === 'vec3') return [e,'vec3'];
-      if(t === 'vec2') return [`vec3<f32>(${e}.x, ${e}.y, 0.0)`, 'vec3'];
-      if(t === 'f32')  return [`vec3<f32>(${e})`, 'vec3'];
-      return [e,'vec3'];
-    }
-    function toF32(e,t){
-      if(t === 'f32') return [e,'f32'];
-      if(t === 'vec2') return [`(${e}.x + ${e}.y) * 0.5`, 'f32'];
-      if(t === 'vec3') return [`(${e}.x + ${e}.y + ${e}.z) / 3.0`, 'f32'];
-      return [e,'f32'];
-    }
-    
-    if(wantType === 'vec3') return toVec3(e,t)[0];
-    if(wantType === 'vec2'){
-      if(t === 'vec2') return e;
-      if(t === 'vec3') return `vec2<f32>(${e}.x, ${e}.y)`;
-      if(t === 'f32')  return `vec2<f32>(${e})`;
-      return `vec2<f32>(0.0)`;
-    }
-    if(wantType === 'f32') return toF32(e,t)[0];
-    return e;
+function want(id, wantType){
+  const sid = sanitize(id);
+  let e = exprs.get(id);
+  let t = types.get(id);
+  if(!e){ e = 'vec3<f32>(0.0)'; t = 'vec3'; }
+  
+  function toVec4(e,t){
+    if(t === 'vec4') return [e,'vec4'];
+    if(t === 'vec3') return [`vec4<f32>(${e}, 1.0)`, 'vec4'];
+    if(t === 'vec2') return [`vec4<f32>(${e}.x, ${e}.y, 0.0, 1.0)`, 'vec4'];
+    if(t === 'f32')  return [`vec4<f32>(${e})`, 'vec4'];
+    return [`vec4<f32>(${e}, 1.0)`,'vec4'];
   }
-
+  
+  function toVec3(e,t){
+    if(t === 'vec3') return [e,'vec3'];
+    if(t === 'vec4') return [`vec3<f32>(${e}.x, ${e}.y, ${e}.z)`, 'vec3']; // Extract RGB
+    if(t === 'vec2') return [`vec3<f32>(${e}.x, ${e}.y, 0.0)`, 'vec3'];
+    if(t === 'f32')  return [`vec3<f32>(${e})`, 'vec3'];
+    return [e,'vec3'];
+  }
+  
+  function toF32(e,t){
+    if(t === 'f32') return [e,'f32'];
+    if(t === 'vec4') return [`${e}.w`, 'f32']; // Extract alpha
+    if(t === 'vec2') return [`(${e}.x + ${e}.y) * 0.5`, 'f32'];
+    if(t === 'vec3') return [`(${e}.x + ${e}.y + ${e}.z) / 3.0`, 'f32'];
+    return [e,'f32'];
+  }
+  
+  if(wantType === 'vec4') return toVec4(e,t)[0];
+  if(wantType === 'vec3') return toVec3(e,t)[0];
+  if(wantType === 'vec2'){
+    if(t === 'vec2') return e;
+    if(t === 'vec4') return `vec2<f32>(${e}.x, ${e}.y)`;
+    if(t === 'vec3') return `vec2<f32>(${e}.x, ${e}.y)`;
+    if(t === 'f32')  return `vec2<f32>(${e})`;
+    return `vec2<f32>(0.0)`;
+  }
+  if(wantType === 'f32') return toF32(e,t)[0];
+  return e;
+}
   for(const n of ordered){
     const id = sanitize(n.id);
     let line = '';
@@ -504,7 +539,27 @@ case 'ConstVec3': {
         outType = 'vec3';
         break;
       }
-
+ case 'Texture2D': {
+        const uv = n.inputs?.[0] ? want(n.inputs[0], 'vec2') : 'in.uv';
+        const textureId = sanitize(n.id);
+        
+        // Sample the texture - this returns a vec4 (RGBA)
+        line = `let node_${id} = textureSample(texture_${textureId}, sampler_${textureId}, ${uv});`;
+        outType = 'vec4';
+        console.log(`Texture2D line: ${line}`);
+        break;
+      }
+      
+      case 'TextureCube': {
+        const dir = n.inputs?.[0] ? want(n.inputs[0], 'vec3') : 
+          'normalize(vec3<f32>(in.uv.x * 2.0 - 1.0, in.uv.y * 2.0 - 1.0, 1.0))';
+        const textureId = sanitize(n.id);
+        
+        line = `let node_${id} = textureSample(textureCube_${textureId}, samplerCube_${textureId}, ${dir});`;
+        outType = 'vec4';
+        console.log(`TextureCube line: ${line}`);
+        break;
+      }
       case 'OutputFinal': {
         const c = n.inputs?.[0] ? want(n.inputs[0],'vec3') : 'vec3<f32>(0.0,0.0,0.0)';
         line = `finalColor = ${c};`;
@@ -530,13 +585,14 @@ case 'ConstVec3': {
     }
   }
 
-// Fixed WGSL code with proper syntax
+const textureInfo = generateTextureBindings(graph);
+
 const code = /* wgsl */`
 struct Globals {
   time: f32,
 }
 
-@group(0) @binding(0) var<uniform> u : Globals;
+@group(0) @binding(0) var<uniform> u : Globals;${textureInfo.bindings}
 
 struct VSOut {
   @builtin(position) pos: vec4<f32>,
@@ -669,5 +725,6 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
   return vec4<f32>(finalColor + vec3<f32>(_keep_uniform), 1.0);
 }
 `;
-  return code;
+
+return code;
 }

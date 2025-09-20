@@ -1,4 +1,4 @@
-// PreviewSystem.js - Fixed version with key issues addressed
+// PreviewSystem.js 
 
 export class PreviewSystem {
   constructor(editor) {
@@ -7,8 +7,71 @@ export class PreviewSystem {
     this.size = 48;
   }
 
+
+
+renderTexture2D(node, size) {
+  console.log('🔍 TEXTURE PREVIEW DEBUG: renderTexture2D called for node', node.id, 'size:', size);
+  
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  
+  // Check if texture is loaded
+  const textureInfo = window.textureManager?.getTexture(node.id);
+  console.log('Texture info for node', node.id, ':', textureInfo);
+  
+  if (textureInfo && textureInfo.file) {
+    // Try to create image from file
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, size, size);
+      ctx.drawImage(img, 0, 0, size, size);
+      
+      // Add indicator
+      ctx.fillStyle = 'rgba(74, 144, 226, 0.9)';
+      ctx.fillRect(0, 0, 14, 10);
+      ctx.fillStyle = 'white';
+      ctx.font = 'bold 8px Arial';
+      ctx.fillText('2D', 2, 8);
+    };
+    img.src = URL.createObjectURL(textureInfo.file);
+    
+    // Show loading state
+    ctx.fillStyle = '#555';
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#4a90e2';
+    ctx.font = 'bold 10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Loading...', size/2, size/2);
+  } else {
+    // No texture - show clear placeholder
+    ctx.fillStyle = '#444';
+    ctx.fillRect(0, 0, size, size);
+    
+    // Bright border
+    ctx.strokeStyle = '#4a90e2';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(2, 2, size-4, size-4);
+    
+    // Clear text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('2D', size/2, size/2 - 4);
+    ctx.fillText('TEX', size/2, size/2 + 10);
+  }
+  
+  console.log('🎨 TEXTURE PREVIEW: Returning canvas:', canvas, 'dimensions:', canvas.width, 'x', canvas.height);
+  return canvas;
+}
+
+
+
+
   // Generate preview for a single node
   generateNodePreview(node) {
+
     console.log('Generating preview for:', node.kind, node.kind.toLowerCase()); 
 
     if (!this.editor.isPreviewEnabled) {
@@ -26,6 +89,9 @@ export class PreviewSystem {
       
       // Route to specific renderer
       switch (node.kind.toLowerCase()) {
+            case 'texture2d':
+      const canvas = this.renderTexture2D(node, size);
+this.previewCache.set(node.id, canvas);
         case 'constfloat':
         case 'float':
           this.renderFloat(ctx, node);
@@ -102,10 +168,15 @@ export class PreviewSystem {
         case 'refract':
           this.renderRefract(ctx, node);
           break;
-        default:
-          this.renderGeneric(ctx, node);
+case 'texture2d':
+  const textureCanvas = this.renderTexture2D(node, 64);
+  ctx.drawImage(textureCanvas, 0, 0);
+  break;
+  case 'texturecube':
+  const cubeCanvas = this.renderTextureCube(node, 64);
+  ctx.drawImage(cubeCanvas, 0, 0);
+  break;
       }
-      
       node.__thumb = canvas;
       
     } catch (error) {
